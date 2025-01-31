@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Github, FolderGit2, ArrowRight, GitBranch, ExternalLink, Star, ChevronDown, ChevronUp, Brain, MessageSquareMore, Network, FileCode, Database, X, Edit3, RotateCcw } from 'lucide-react';
+import { Plus, Github, FolderGit2, ArrowRight, ArrowLeft, GitBranch, ExternalLink, Star, ChevronDown, ChevronUp, Brain, MessageSquareMore, Network, FileCode, Database, X, Edit3, RotateCcw, Trash2, Check } from 'lucide-react';
 
 // Mock projects data
 const mockProjects = [
@@ -69,6 +69,25 @@ const mockAnalysisData = {
   executiveSummary: 'This requirement introduces significant changes to the payment processing workflow, affecting multiple system components. Key considerations include security implications and user experience improvements.'
 };
 
+interface SnackbarState {
+  show: boolean;
+  message: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+
+interface Action {
+  id: string;
+  type: string;
+  item: string;
+  action: 'edit' | 'ignore';
+  timestamp: number;
+  username: string;
+  editedContent?: string;
+}
+
 function App() {
   const [step, setStep] = useState(1);
   const [showProjects, setShowProjects] = useState(false);
@@ -82,8 +101,20 @@ function App() {
     valueStatement: '',
     acceptanceCriteria: ''
   });
-  const [actions, setActions] = useState<Array<{ id: string; type: string; item: string; action: 'edit' | 'ignore'; timestamp: number }>>([]);
+  const [actions, setActions] = useState<Action[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [snackbar, setSnackbar] = useState<SnackbarState>({ show: false, message: '' });
+  const [pendingDeleteRepo, setPendingDeleteRepo] = useState<{ projectId: number; repoName: string } | null>(null);
+  const [showEditRequirementSlider, setShowEditRequirementSlider] = useState(false);
+  const [editingMitigationId, setEditingMitigationId] = useState<string | null>(null);
+  const [editedMitigationContent, setEditedMitigationContent] = useState('');
+  const [editingImpactId, setEditingImpactId] = useState<string | null>(null);
+  const [editedImpactContent, setEditedImpactContent] = useState('');
+  const [showReviewChangesSlider, setShowReviewChangesSlider] = useState(false);
+
+  const currentUser = {
+    username: 'John Doe'
+  };
 
   const toggleExpanded = (projectId: number) => {
     setExpandedProjects(prev => 
@@ -107,13 +138,46 @@ function App() {
       type,
       item,
       action,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      username: currentUser.username
     };
     setActions(prev => [newAction, ...prev]);
+    
+    if (action === 'edit') {
+      if (type === 'risk') {
+        setEditingMitigationId(id);
+        setEditedMitigationContent(item);
+      } else {
+        setEditingImpactId(id);
+        setEditedImpactContent(item);
+      }
+    }
   };
 
-  const undoAction = (actionId: string) => {
-    setActions(prev => prev.filter(action => action.id !== actionId));
+  const handleSubmitMitigationEdit = (riskId: string) => {
+    setActions(prev => prev.map(action => 
+      action.id === riskId 
+        ? { ...action, editedContent: editedMitigationContent }
+        : action
+    ));
+    setEditingMitigationId(null);
+    setEditedMitigationContent('');
+  };
+
+  const handleDiscardEdit = (riskId: string) => {
+    setEditingMitigationId(null);
+    setEditedMitigationContent('');
+    setActions(prev => prev.filter(action => action.id !== riskId));
+  };
+
+  const handleSubmitImpactEdit = (impactId: string) => {
+    setActions(prev => prev.map(action => 
+      action.id === impactId 
+        ? { ...action, editedContent: editedImpactContent }
+        : action
+    ));
+    setEditingImpactId(null);
+    setEditedImpactContent('');
   };
 
   const handleAddToRequirement = () => {
@@ -127,6 +191,96 @@ function App() {
     setShowAnalysisResults(true);
   };
 
+  const handleDeleteRepo = (projectId: number, repoName: string) => {
+    setPendingDeleteRepo({ projectId, repoName });
+    setSnackbar({
+      show: true,
+      message: `Delete repository "${repoName}"?`,
+      action: {
+        label: 'Delete',
+        onClick: () => {
+          const updatedProjects = mockProjects.map(project => {
+            if (project.id === projectId) {
+              return {
+                ...project,
+                repositories: project.repositories.filter(repo => repo.name !== repoName)
+              };
+            }
+            return project;
+          });
+          setPendingDeleteRepo(null);
+          setSnackbar({ show: false, message: '' });
+        }
+      }
+    });
+  };
+
+  const handleDeleteProject = (projectId: number, projectName: string) => {
+    setSnackbar({
+      show: true,
+      message: `Delete project "${projectName}"?`,
+      action: {
+        label: 'Delete',
+        onClick: () => {
+          const updatedProjects = mockProjects.filter(project => project.id !== projectId);
+          setSnackbar({ show: false, message: '' });
+        }
+      }
+    });
+  };
+
+  const handleEditRequirement = () => {
+    setShowEditRequirementSlider(true);
+  };
+
+  const handleUndoAllActions = () => {
+    setActions([]);
+    setEditingMitigationId(null);
+    setEditedMitigationContent('');
+    setEditingImpactId(null);
+    setEditedImpactContent('');
+  };
+
+  const handleAcceptChange = (action: Action) => {
+    const changeDescription = `\n\nImpact: ${
+      action.type === 'risk' ? 'Risk Mitigation' :
+      action.type === 'ui' ? 'UI/UX Impact' :
+      action.type === 'code' ? 'Code Impact' : 'Data Impact'
+    }\n${action.editedContent || action.item}`;
+
+    setRequirementForm(prev => ({
+      ...prev,
+      acceptanceCriteria: prev.acceptanceCriteria 
+        ? `${prev.acceptanceCriteria}${changeDescription}`
+        : changeDescription.trim()
+    }));
+
+    setActions(prev => prev.filter(a => a.timestamp !== action.timestamp));
+  };
+
+  const handleAcceptAllChanges = () => {
+    // Process all actions and add them to acceptance criteria
+    actions.forEach(action => {
+      const changeDescription = `\n\nImpact: ${
+        action.type === 'risk' ? 'Risk Mitigation' :
+        action.type === 'ui' ? 'UI/UX Impact' :
+        action.type === 'code' ? 'Code Impact' : 'Data Impact'
+      }\n${action.editedContent || action.item}`;
+
+      setRequirementForm(prev => ({
+        ...prev,
+        acceptanceCriteria: prev.acceptanceCriteria 
+          ? `${prev.acceptanceCriteria}${changeDescription}`
+          : changeDescription.trim()
+      }));
+    });
+
+    // Clear all actions
+    setActions([]);
+    // Close the slider
+    setShowReviewChangesSlider(false);
+  };
+
   if (showAnalysisResults) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -134,15 +288,24 @@ function App() {
         <header className="bg-white shadow-sm">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-semibold text-gray-900">{requirementForm.name || 'Requirement Analysis'}</h1>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => {
+                    setShowAnalysisResults(false);
+                    setShowEditRequirementSlider(true);
+                  }}
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                  aria-label="Go back"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-2xl font-semibold text-gray-900">Impact Analysis</h1>
+              </div>
               <div className="flex gap-4">
                 <button 
-                  onClick={handleAddToRequirement}
+                  onClick={() => setShowReviewChangesSlider(true)}
                   className="px-4 py-2 text-sm font-medium text-white bg-[#feb249] rounded-md hover:bg-[#fea849]"
                 >
-                  Add to Requirement
-                </button>
-                <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                   Review Changes
                 </button>
                 <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
@@ -154,6 +317,215 @@ function App() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 py-8">
+          {/* Requirement Section */}
+          <section className="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                  {requirementForm.name || 'Untitled Requirement'}
+                </h2>
+              </div>
+              <button
+                onClick={handleEditRequirement}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#feb249] hover:bg-[#fff5e6] rounded-md"
+              >
+                <Edit3 className="w-4 h-4" />
+                Edit Requirement
+              </button>
+            </div>
+          </section>
+
+          {/* Edit Requirement Slider */}
+          {showEditRequirementSlider && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+              <div className="absolute inset-y-0 right-0 w-[500px] bg-white shadow-lg">
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between p-6 border-b">
+                    <h2 className="text-xl font-semibold text-gray-900">Edit Requirement</h2>
+                    <button 
+                      onClick={() => setShowEditRequirementSlider(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 p-6 overflow-y-auto">
+                    <form className="space-y-6">
+                      <div>
+                        <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                          Requirement Name
+                        </label>
+                        <input
+                          type="text"
+                          id="name"
+                          value={requirementForm.name}
+                          onChange={(e) => setRequirementForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="Name of requirement"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label htmlFor="valueStatement" className="block text-sm font-medium text-gray-700 mb-1">
+                          Value Statement
+                        </label>
+                        <textarea
+                          id="valueStatement"
+                          value={requirementForm.valueStatement}
+                          onChange={(e) => setRequirementForm(prev => ({ ...prev, valueStatement: e.target.value }))}
+                          placeholder="As a (intended user), I want to (intended action), so that (goal/outcome of action)."
+                          rows={4}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label htmlFor="acceptanceCriteria" className="block text-sm font-medium text-gray-700 mb-1">
+                          Acceptance Criteria
+                        </label>
+                        <textarea
+                          id="acceptanceCriteria"
+                          value={requirementForm.acceptanceCriteria}
+                          onChange={(e) => setRequirementForm(prev => ({ ...prev, acceptanceCriteria: e.target.value }))}
+                          placeholder="Scenario: (explain scenario). Given (how things begin/pre condition), when (action taken), then (outcome of taking action)"
+                          rows={4}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                        />
+                      </div>
+                    </form>
+                  </div>
+                  
+                  <div className="p-6 border-t">
+                    <button
+                      onClick={() => setShowEditRequirementSlider(false)}
+                      className="w-full px-4 py-2 bg-[#feb249] text-white rounded-md hover:bg-[#fea849] transition-colors"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Review Changes Slider */}
+          {showReviewChangesSlider && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+              <div className="absolute inset-y-0 right-0 w-[500px] bg-white shadow-lg">
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-between p-6 border-b">
+                    <h2 className="text-xl font-semibold text-gray-900">Review Changes</h2>
+                    <button 
+                      onClick={() => setShowReviewChangesSlider(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+                  
+                  <div className="flex-1 p-6 overflow-y-auto">
+                    <div className="space-y-6">
+                      <form className="space-y-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Requirement Name
+                          </label>
+                          <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-900">
+                            {requirementForm.name || 'Untitled Requirement'}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Value Statement
+                          </label>
+                          <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-900 min-h-[96px]">
+                            {requirementForm.valueStatement || 'No value statement provided'}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Acceptance Criteria
+                          </label>
+                          <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-900 min-h-[96px] space-y-3">
+                            {requirementForm.acceptanceCriteria || 'No acceptance criteria provided'}
+                            
+                            {actions.length > 0 && (
+                              <div className="border-t border-gray-200 mt-3 pt-3">
+                                <div className="space-y-2">
+                                  {actions.map(action => (
+                                    <div key={action.timestamp} className="flex items-center justify-between p-2 bg-white rounded-md">
+                                      <div className="flex items-center gap-2">
+                                        {action.action === 'edit' ? (
+                                          <Edit3 className="w-4 h-4 text-[#feb249]" />
+                                        ) : (
+                                          <X className="w-4 h-4 text-gray-500" />
+                                        )}
+                                        <div className="text-sm">
+                                          <span className="text-gray-600">
+                                            {action.type === 'risk' ? 'Risk Mitigation' :
+                                             action.type === 'ui' ? 'UI/UX Impact' :
+                                             action.type === 'code' ? 'Code Impact' : 'Data Impact'}:
+                                          </span>
+                                          {action.action === 'edit' && (
+                                            <div className="mt-1 pl-4 text-gray-500">
+                                              <div className="line-through">{action.item}</div>
+                                              <div className="text-gray-900">{action.editedContent}</div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => handleAcceptChange(action)}
+                                          className="flex items-center gap-1 px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded-md"
+                                        >
+                                          <Check className="w-4 h-4" />
+                                          Accept
+                                        </button>
+                                        <button
+                                          onClick={() => {/* TODO: Handle reject */}}
+                                          className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                                        >
+                                          <X className="w-4 h-4" />
+                                          Reject
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                  
+                  <div className="p-6 border-t">
+                    <button
+                      onClick={() => {
+                        handleUndoAllActions();
+                        setShowReviewChangesSlider(false);
+                      }}
+                      className="w-full px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 mb-3"
+                    >
+                      Undo All Changes
+                    </button>
+                    <button
+                      onClick={handleAcceptAllChanges}
+                      className="w-full px-4 py-2 bg-[#feb249] text-white rounded-md hover:bg-[#fea849] transition-colors"
+                    >
+                      Accept All
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Dependencies Section */}
           <section className="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Dependencies</h2>
@@ -170,12 +542,16 @@ function App() {
           <section className="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Risks & Mitigations</h2>
             <div className="space-y-6">
-              {mockAnalysisData.risks.map(risk => (
-                <div key={risk.id} className="bg-gray-50 rounded-lg overflow-hidden">
-                  <div className="flex items-center justify-between p-4">
-                    <div>
-                      <h3 className="font-medium text-gray-900">{risk.description}</h3>
-                      <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1 ${
+              {mockAnalysisData.risks.map(risk => {
+                const riskAction = actions.find(action => action.id === risk.id);
+                
+                return (
+                  <div key={risk.id} className="bg-gray-50 rounded-lg overflow-hidden">
+                    <div className="flex items-center p-4">
+                      <h3 className="font-medium text-gray-900">
+                        {risk.description}
+                      </h3>
+                      <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1  ml-2 ${
                         risk.severity === 'High' ? 'bg-red-100 text-red-800' :
                         risk.severity === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
                         'bg-green-100 text-green-800'
@@ -183,29 +559,69 @@ function App() {
                         {risk.severity} Risk
                       </span>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleAction(risk.id, 'risk', risk.description, 'edit')}
-                        className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
-                      >
-                        Edit Requirement
-                      </button>
-                      <button
-                        onClick={() => handleAction(risk.id, 'risk', risk.description, 'ignore')}
-                        className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
-                      >
-                        Ignore
-                      </button>
+                    <div className="border-t border-gray-200 bg-white p-4">
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <span className="font-medium">Mitigation:</span>
+                        {editingMitigationId === risk.id ? (
+                          <textarea
+                            value={editedMitigationContent}
+                            onChange={(e) => setEditedMitigationContent(e.target.value)}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                            rows={2}
+                          />
+                        ) : (
+                          <span>{riskAction?.editedContent || risk.mitigation}</span>
+                        )}
+                      </div>
+                      <div className="flex justify-between items-center mt-3">
+                        {!riskAction ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleAction(risk.id, 'risk', risk.mitigation, 'edit')}
+                              className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
+                            >
+                              Edit Requirement
+                            </button>
+                            <button
+                              onClick={() => handleAction(risk.id, 'risk', risk.mitigation, 'ignore')}
+                              className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                            >
+                              Ignore
+                            </button>
+                          </div>
+                        ) : editingMitigationId === risk.id ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleSubmitMitigationEdit(risk.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded-md"
+                            >
+                              <Check className="w-4 h-4" />
+                              Submit
+                            </button>
+                            <button
+                              onClick={() => handleDiscardEdit(risk.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                            >
+                              <X className="w-4 h-4" />
+                              Discard
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDiscardEdit(risk.id)}
+                              className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              Undo
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="border-t border-gray-200 bg-white p-4">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <span className="font-medium">Mitigation:</span>
-                      <span>{risk.mitigation}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
@@ -216,7 +632,7 @@ function App() {
           </section>
 
           {/* Impact Columns */}
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-3 gap-6 mb-8">
             {/* UI/UX Impacts */}
             <section className="bg-white rounded-lg shadow-sm p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -224,25 +640,69 @@ function App() {
                 <h2 className="text-lg font-semibold text-gray-900">UI/UX</h2>
               </div>
               <div className="space-y-4">
-                {mockAnalysisData.uiUxImpacts.map(impact => (
-                  <div key={impact.id} className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-gray-600 mb-3">{impact.description}</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleAction(impact.id, 'ui', impact.description, 'edit')}
-                        className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
-                      >
-                        Edit Requirement
-                      </button>
-                      <button
-                        onClick={() => handleAction(impact.id, 'ui', impact.description, 'ignore')}
-                        className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
-                      >
-                        Ignore
-                      </button>
+                {mockAnalysisData.uiUxImpacts.map(impact => {
+                  const impactAction = actions.find(action => action.id === impact.id);
+                  
+                  return (
+                    <div key={impact.id} className="p-4 bg-gray-50 rounded-lg">
+                      {editingImpactId === impact.id ? (
+                        <textarea
+                          value={editedImpactContent}
+                          onChange={(e) => setEditedImpactContent(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent mb-3"
+                          rows={2}
+                        />
+                      ) : (
+                        <p className="text-gray-600 mb-3">
+                          {impactAction?.editedContent || impact.description}
+                        </p>
+                      )}
+                      <div className="flex gap-2">
+                        {!impactAction ? (
+                          <>
+                            <button
+                              onClick={() => handleAction(impact.id, 'ui', impact.description, 'edit')}
+                              className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
+                            >
+                              Edit Requirement
+                            </button>
+                            <button
+                              onClick={() => handleAction(impact.id, 'ui', impact.description, 'ignore')}
+                              className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                            >
+                              Ignore
+                            </button>
+                          </>
+                        ) : editingImpactId === impact.id ? (
+                          <>
+                            <button
+                              onClick={() => handleSubmitImpactEdit(impact.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded-md"
+                            >
+                              <Check className="w-4 h-4" />
+                              Submit
+                            </button>
+                            <button
+                              onClick={() => handleDiscardEdit(impact.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                            >
+                              <X className="w-4 h-4" />
+                              Discard
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleDiscardEdit(impact.id)}
+                            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            Undo
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -253,25 +713,69 @@ function App() {
                 <h2 className="text-lg font-semibold text-gray-900">Code Source</h2>
               </div>
               <div className="space-y-4">
-                {mockAnalysisData.codeImpacts.map(impact => (
-                  <div key={impact.id} className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-gray-600 mb-3">{impact.description}</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleAction(impact.id, 'code', impact.description, 'edit')}
-                        className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
-                      >
-                        Edit Requirement
-                      </button>
-                      <button
-                        onClick={() => handleAction(impact.id, 'code', impact.description, 'ignore')}
-                        className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
-                      >
-                        Ignore
-                      </button>
+                {mockAnalysisData.codeImpacts.map(impact => {
+                  const impactAction = actions.find(action => action.id === impact.id);
+                  
+                  return (
+                    <div key={impact.id} className="p-4 bg-gray-50 rounded-lg">
+                      {editingImpactId === impact.id ? (
+                        <textarea
+                          value={editedImpactContent}
+                          onChange={(e) => setEditedImpactContent(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent mb-3"
+                          rows={2}
+                        />
+                      ) : (
+                        <p className="text-gray-600 mb-3">
+                          {impactAction?.editedContent || impact.description}
+                        </p>
+                      )}
+                      <div className="flex gap-2">
+                        {!impactAction ? (
+                          <>
+                            <button
+                              onClick={() => handleAction(impact.id, 'code', impact.description, 'edit')}
+                              className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
+                            >
+                              Edit Requirement
+                            </button>
+                            <button
+                              onClick={() => handleAction(impact.id, 'code', impact.description, 'ignore')}
+                              className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                            >
+                              Ignore
+                            </button>
+                          </>
+                        ) : editingImpactId === impact.id ? (
+                          <>
+                            <button
+                              onClick={() => handleSubmitImpactEdit(impact.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded-md"
+                            >
+                              <Check className="w-4 h-4" />
+                              Submit
+                            </button>
+                            <button
+                              onClick={() => handleDiscardEdit(impact.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                            >
+                              <X className="w-4 h-4" />
+                              Discard
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleDiscardEdit(impact.id)}
+                            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            Undo
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -282,49 +786,112 @@ function App() {
                 <h2 className="text-lg font-semibold text-gray-900">Data Source</h2>
               </div>
               <div className="space-y-4">
-                {mockAnalysisData.dataImpacts.map(impact => (
-                  <div key={impact.id} className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-gray-600 mb-3">{impact.description}</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleAction(impact.id, 'data', impact.description, 'edit')}
-                        className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
-                      >
-                        Edit Requirement
-                      </button>
-                      <button
-                        onClick={() => handleAction(impact.id, 'data', impact.description, 'ignore')}
-                        className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
-                      >
-                        Ignore
-                      </button>
+                {mockAnalysisData.dataImpacts.map(impact => {
+                  const impactAction = actions.find(action => action.id === impact.id);
+                  
+                  return (
+                    <div key={impact.id} className="p-4 bg-gray-50 rounded-lg">
+                      {editingImpactId === impact.id ? (
+                        <textarea
+                          value={editedImpactContent}
+                          onChange={(e) => setEditedImpactContent(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent mb-3"
+                          rows={2}
+                        />
+                      ) : (
+                        <p className="text-gray-600 mb-3">
+                          {impactAction?.editedContent || impact.description}
+                        </p>
+                      )}
+                      <div className="flex gap-2">
+                        {!impactAction ? (
+                          <>
+                            <button
+                              onClick={() => handleAction(impact.id, 'data', impact.description, 'edit')}
+                              className="px-3 py-1 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
+                            >
+                              Edit Requirement
+                            </button>
+                            <button
+                              onClick={() => handleAction(impact.id, 'data', impact.description, 'ignore')}
+                              className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+                            >
+                              Ignore
+                            </button>
+                          </>
+                        ) : editingImpactId === impact.id ? (
+                          <>
+                            <button
+                              onClick={() => handleSubmitImpactEdit(impact.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded-md"
+                            >
+                              <Check className="w-4 h-4" />
+                              Submit
+                            </button>
+                            <button
+                              onClick={() => handleDiscardEdit(impact.id)}
+                              className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                            >
+                              <X className="w-4 h-4" />
+                              Discard
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleDiscardEdit(impact.id)}
+                            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            Undo
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           </div>
 
           {/* Recent Actions */}
           {actions.length > 0 && (
-            <section className="mt-8 bg-white rounded-lg shadow-sm p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Actions</h2>
+            <section className="bg-white rounded-lg shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="w-5 h-5 text-[#feb249]" />
+                  <h2 className="text-lg font-semibold text-gray-900">Recent Actions</h2>
+                </div>
+                <button
+                  onClick={handleUndoAllActions}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Undo All
+                </button>
+              </div>
               <div className="space-y-3">
                 {actions.map(action => (
                   <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center gap-3">
-                      {action.action === 'edit' ? <Edit3 className="w-4 h-4 text-[#feb249]" /> : <X className="w-4 h-4 text-gray-500" />}
-                      <span className="text-gray-600">
-                        {action.action === 'edit' ? 'Edited' : 'Ignored'} {action.type}: {action.item}
-                      </span>
+                      {action.action === 'edit' ? (
+                        <Edit3 className="w-4 h-4 text-[#feb249]" />
+                      ) : (
+                        <X className="w-4 h-4 text-gray-500" />
+                      )}
+                      <div className="flex flex-col">
+                        <span className="text-gray-600">
+                          {action.action === 'edit' ? 'Edited' : 'Ignored'} {action.type}: {action.item}
+                        </span>
+                        <span className="text-sm text-gray-400">
+                          by {action.username} • {
+                            new Date(action.timestamp).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })
+                          }
+                        </span>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => undoAction(action.id)}
-                      className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      Undo
-                    </button>
                   </div>
                 ))}
               </div>
@@ -459,6 +1026,31 @@ function App() {
   }
 
   if (showProjects) {
+    const snackbarJSX = snackbar.show && (
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-4 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg">
+        <span>{snackbar.message}</span>
+        <div className="flex items-center gap-3">
+          {snackbar.action && (
+            <button
+              onClick={snackbar.action.onClick}
+              className="text-[#feb249] hover:text-[#fea849] font-medium"
+            >
+              {snackbar.action.label}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setPendingDeleteRepo(null);
+              setSnackbar({ show: false, message: '' });
+            }}
+            className="text-gray-300 hover:text-white"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+
     return (
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
@@ -507,6 +1099,13 @@ function App() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => handleDeleteProject(project.id, project.name)}
+                      className="text-gray-400 hover:text-red-500 transition-colors"
+                      aria-label={`Delete ${project.name} project`}
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
                     <button 
                       onClick={() => toggleExpanded(project.id)}
                       className="text-gray-400 hover:text-gray-600"
@@ -521,7 +1120,16 @@ function App() {
                 </div>
                 {expandedProjects.includes(project.id) && (
                   <div className="border-t px-4 py-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-3">Connected Repositories</h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-medium text-gray-700">Connected Repositories</h3>
+                      <button 
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[#feb249] hover:bg-[#fff5e6] rounded-md"
+                        onClick={() => {/* TODO: Implement add repo functionality */}}
+                      >
+                        <Plus className="w-4 h-4" />
+                        New Repository
+                      </button>
+                    </div>
                     <div className="space-y-3">
                       {project.repositories.map(repo => (
                         <div key={repo.name} className="flex items-center justify-between bg-gray-50 px-4 py-3 rounded-md">
@@ -542,6 +1150,13 @@ function App() {
                             >
                               <ExternalLink className="w-4 h-4" />
                             </a>
+                            <button
+                              onClick={() => handleDeleteRepo(project.id, repo.name)}
+                              className="text-gray-400 hover:text-red-500 transition-colors"
+                              aria-label={`Delete ${repo.name} repository`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -552,6 +1167,7 @@ function App() {
             ))}
           </div>
         </main>
+        {snackbarJSX}
       </div>
     );
   }
@@ -619,7 +1235,7 @@ function App() {
                   <button 
                     type="button"
                     onClick={() => setStep(2)}
-                    className="flex items-center gap-2 px-4 py-2 bg -[#feb249] text-white rounded-md hover:bg-[#fea849] transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#fea849] text-white rounded-md hover:bg-[#fea849] transition-colors"
                   >
                     Next Step
                     <ArrowRight className="w-4 h-4" />
