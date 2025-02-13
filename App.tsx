@@ -86,16 +86,34 @@ interface Action {
   timestamp: number;
   username: string;
   editedContent?: string;
+  status?: string;
+  completedAt?: number;
+}
+
+// Add interface for requirement
+interface Requirement {
+  id: string;
+  projectId: number;
+  name: string;
+  valueStatement: string;
+  acceptanceCriteria: string;
+  lastViewed: number;
+  editedBy: string;
+  createdAt: number;
+  createdBy: string;
+  hasDraft: boolean;
+  impactScore: number;  // Add impact score field
 }
 
 function App() {
   const [step, setStep] = useState(1);
-  const [showProjects, setShowProjects] = useState(false);
+  const [showProjects, setShowProjects] = useState(true);
   const [expandedProjects, setExpandedProjects] = useState<number[]>([]);
   const [favorites, setFavorites] = useState<number[]>([]);
   const [selectedProject, setSelectedProject] = useState<number | null>(null);
   const [showAnalyzeSlider, setShowAnalyzeSlider] = useState(false);
   const [showAnalysisResults, setShowAnalysisResults] = useState(false);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [requirementForm, setRequirementForm] = useState({
     name: '',
     valueStatement: '',
@@ -111,6 +129,34 @@ function App() {
   const [editingImpactId, setEditingImpactId] = useState<string | null>(null);
   const [editedImpactContent, setEditedImpactContent] = useState('');
   const [showReviewChangesSlider, setShowReviewChangesSlider] = useState(false);
+  const [newProjectForm, setNewProjectForm] = useState({
+    name: '',
+    description: ''
+  });
+  const [mockProjectsList, setMockProjectsList] = useState(mockProjects);
+  const [completedActions, setCompletedActions] = useState<Action[]>([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [showRequirementsList, setShowRequirementsList] = useState(false);
+  const [selectedRequirement, setSelectedRequirement] = useState<string | null>(null);
+  const [showImpactDetails, setShowImpactDetails] = useState(false);
+  const [showActivityLog, setShowActivityLog] = useState(false);
+
+  // Add ref for dropdown
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Add click outside handler
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowProjectDropdown(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const currentUser = {
     username: 'John Doe'
@@ -187,8 +233,30 @@ function App() {
   };
 
   const handleAnalyzeRequirement = () => {
+    // Create new requirement if name exists
+    if (requirementForm.name && selectedProject) {
+      const newRequirement: Requirement = {
+        id: Date.now().toString(),
+        projectId: selectedProject,
+        name: requirementForm.name,
+        valueStatement: requirementForm.valueStatement,
+        acceptanceCriteria: requirementForm.acceptanceCriteria,
+        lastViewed: Date.now(),
+        editedBy: currentUser.username,
+        createdAt: Date.now(),
+        createdBy: currentUser.username,
+        hasDraft: true,
+        impactScore: Math.floor(Math.random() * 5) + 1  // Random score between 1-5 for demo
+      };
+      setRequirements(prev => [...prev, newRequirement]);
+      setSelectedRequirement(newRequirement.id);
+    }
+    
+    // Go directly to analysis results
     setShowAnalyzeSlider(false);
     setShowAnalysisResults(true);
+    setShowEditRequirementSlider(false);
+    setIsEditMode(false);
   };
 
   const handleDeleteRepo = (projectId: number, repoName: string) => {
@@ -199,7 +267,7 @@ function App() {
       action: {
         label: 'Delete',
         onClick: () => {
-          const updatedProjects = mockProjects.map(project => {
+          const updatedProjects = mockProjectsList.map(project => {
             if (project.id === projectId) {
               return {
                 ...project,
@@ -222,7 +290,7 @@ function App() {
       action: {
         label: 'Delete',
         onClick: () => {
-          const updatedProjects = mockProjects.filter(project => project.id !== projectId);
+          setMockProjectsList(prev => prev.filter(project => project.id !== projectId));
           setSnackbar({ show: false, message: '' });
         }
       }
@@ -230,6 +298,7 @@ function App() {
   };
 
   const handleEditRequirement = () => {
+    // Only show edit slider when edit button is clicked
     setShowEditRequirementSlider(true);
   };
 
@@ -255,6 +324,13 @@ function App() {
         : changeDescription.trim()
     }));
 
+    // Move action to completedActions
+    setCompletedActions(prev => [{
+      ...action,
+      status: 'accepted',
+      completedAt: Date.now()
+    }, ...prev]);
+
     setActions(prev => prev.filter(a => a.timestamp !== action.timestamp));
   };
 
@@ -275,25 +351,113 @@ function App() {
       }));
     });
 
-    // Clear all actions
+    // Move all actions to completedActions
+    setCompletedActions(prev => [
+      ...actions.map(action => ({
+        ...action,
+        status: 'accepted',
+        completedAt: Date.now()
+      })),
+      ...prev
+    ]);
+
+    // Clear draft status for this requirement
+    setRequirements(prev => prev.map(req => 
+      req.id === selectedRequirement
+        ? { ...req, hasDraft: false }
+        : req
+    ));
+
+    // Clear pending actions
     setActions([]);
     // Close the slider
     setShowReviewChangesSlider(false);
   };
 
+  const handleCreateProject = () => {
+    // Create a new project with the form data
+    const newProject = {
+      id: mockProjectsList.length + 1,
+      name: newProjectForm.name || 'Untitled Project',
+      description: newProjectForm.description || 'No description provided',
+      repositories: []
+    };
+    
+    // Add to mock projects
+    setMockProjectsList(prev => [...prev, newProject]);
+    
+    // Reset form
+    setNewProjectForm({
+      name: '',
+      description: ''
+    });
+
+    // Navigate to Your Projects page
+    setShowProjects(true);
+  };
+
+  // Add function to format timestamp
+  const formatLastViewed = (timestamp: number) => {
+    const now = new Date();
+    const date = new Date(timestamp);
+    
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  // Add handleDeleteRequirement function
+  const handleDeleteRequirement = (requirementId: string, requirementName: string) => {
+    setSnackbar({
+      show: true,
+      message: `Delete requirement "${requirementName}"?`,
+      action: {
+        label: 'Delete',
+        onClick: () => {
+          setRequirements(prev => prev.filter(req => req.id !== requirementId));
+          setSnackbar({ show: false, message: '' });
+        }
+      }
+    });
+  };
+
+  // Update the back button handler in Impact Analysis screen
+  const handleBackToRequirements = () => {
+    if (actions.length > 0) {
+      // Update requirement to show it has draft changes
+      setRequirements(prev => prev.map(req => 
+        req.id === selectedRequirement
+          ? { ...req, hasDraft: true }
+          : req
+      ));
+    }
+    setShowAnalysisResults(false);
+    setShowRequirementsList(true);
+  };
+
+  // Add handleRejectChange function
+  const handleRejectChange = (action: Action) => {
+    // Remove the action from pending actions
+    setActions(prev => prev.filter(a => a.timestamp !== action.timestamp));
+    
+    // Add to completed actions with rejected status
+    setCompletedActions(prev => [{
+      ...action,
+      status: 'rejected',
+      completedAt: Date.now()
+    }, ...prev]);
+  };
+
   if (showAnalysisResults) {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
         <header className="bg-white shadow-sm">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => {
-                    setShowAnalysisResults(false);
-                    setShowEditRequirementSlider(true);
-                  }}
+                  onClick={handleBackToRequirements}
                   className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
                   aria-label="Go back"
                 >
@@ -304,9 +468,26 @@ function App() {
               <div className="flex gap-4">
                 <button 
                   onClick={() => setShowReviewChangesSlider(true)}
-                  className="px-4 py-2 text-sm font-medium text-white bg-[#feb249] rounded-md hover:bg-[#fea849]"
+                  disabled={actions.length === 0}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    actions.length > 0 
+                      ? 'text-white bg-[#feb249] hover:bg-[#fea849]' 
+                      : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                  }`}
                 >
                   Review Changes
+                  {actions.length > 0 && (
+                    <span className="ml-2 px-2 py-0.5 text-xs bg-white text-[#feb249] rounded-full">
+                      {actions.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={handleAddToRequirement}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#feb249] bg-white border border-[#feb249] rounded-md hover:bg-[#fff5e6]"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add to Requirement
                 </button>
                 <button className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
                   View on Graph
@@ -320,14 +501,74 @@ function App() {
           {/* Requirement Section */}
           <section className="bg-white rounded-lg shadow-sm p-6 mb-8">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                  {requirementForm.name || 'Untitled Requirement'}
-                </h2>
+              <div className="w-full">
+                <div className="flex items-center gap-4 mb-2">
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {requirementForm.name || 'Untitled Requirement'}
+                  </h2>
+                  <button
+                    onClick={() => setShowImpactDetails(!showImpactDetails)}
+                    className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                  >
+                    <span className="text-sm font-medium text-gray-600">Impact Score:</span>
+                    <span className="text-sm font-bold text-[#feb249]">
+                      {requirements.find(req => req.id === selectedRequirement)?.impactScore}/5
+                    </span>
+                    {showImpactDetails ? (
+                      <ChevronUp className="w-4 h-4 text-gray-500" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                    )}
+                  </button>
+                </div>
+                {showImpactDetails && (
+                  <div className="mt-4 pl-4 space-y-2 border-l-2 border-gray-100">
+                    <div className="flex items-center gap-2">
+                      {(requirements.find(req => req.id === selectedRequirement)?.impactScore ?? 0) >= 1 ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <X className="w-4 h-4 text-red-500" />
+                      )}
+                      <span className="text-sm text-gray-600">Clear value statement and business impact</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(requirements.find(req => req.id === selectedRequirement)?.impactScore ?? 0) >= 2 ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <X className="w-4 h-4 text-red-500" />
+                      )}
+                      <span className="text-sm text-gray-600">Well-defined acceptance criteria</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(requirements.find(req => req.id === selectedRequirement)?.impactScore ?? 0) >= 3 ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <X className="w-4 h-4 text-red-500" />
+                      )}
+                      <span className="text-sm text-gray-600">Identified technical dependencies and risks</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(requirements.find(req => req.id === selectedRequirement)?.impactScore ?? 0) >= 4 ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <X className="w-4 h-4 text-red-500" />
+                      )}
+                      <span className="text-sm text-gray-600">Comprehensive impact analysis across UI/UX, code, and data</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(requirements.find(req => req.id === selectedRequirement)?.impactScore ?? 0) >= 5 ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <X className="w-4 h-4 text-red-500" />
+                      )}
+                      <span className="text-sm text-gray-600">Mitigation strategies for identified risks</span>
+                    </div>
+                  </div>
+                )}
               </div>
               <button
                 onClick={handleEditRequirement}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#feb249] hover:bg-[#fff5e6] rounded-md"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#feb249] hover:bg-[#fff5e6] rounded-md whitespace-nowrap"
               >
                 <Edit3 className="w-4 h-4" />
                 Edit Requirement
@@ -486,7 +727,7 @@ function App() {
                                           Accept
                                         </button>
                                         <button
-                                          onClick={() => {/* TODO: Handle reject */}}
+                                          onClick={() => handleRejectChange(action)}
                                           className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
                                         >
                                           <X className="w-4 h-4" />
@@ -510,13 +751,23 @@ function App() {
                         handleUndoAllActions();
                         setShowReviewChangesSlider(false);
                       }}
-                      className="w-full px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 mb-3"
+                      disabled={actions.length === 0}
+                      className={`w-full px-4 py-2 text-gray-600 border border-gray-300 rounded-md mb-3 ${
+                        actions.length === 0 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:bg-gray-50'
+                      }`}
                     >
                       Undo All Changes
                     </button>
                     <button
                       onClick={handleAcceptAllChanges}
-                      className="w-full px-4 py-2 bg-[#feb249] text-white rounded-md hover:bg-[#fea849] transition-colors"
+                      disabled={actions.length === 0}
+                      className={`w-full px-4 py-2 bg-[#feb249] text-white rounded-md ${
+                        actions.length === 0 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : 'hover:bg-[#fea849] transition-colors'
+                      }`}
                     >
                       Accept All
                     </button>
@@ -853,51 +1104,391 @@ function App() {
             </section>
           </div>
 
-          {/* Recent Actions */}
-          {actions.length > 0 && (
-            <section className="bg-white rounded-lg shadow-sm p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <RotateCcw className="w-5 h-5 text-[#feb249]" />
-                  <h2 className="text-lg font-semibold text-gray-900">Recent Actions</h2>
-                </div>
+          {/* Activity Log */}
+          <section className="bg-white rounded-lg shadow-sm p-6">
+            <button 
+              onClick={() => setShowActivityLog(!showActivityLog)}
+              className="w-full flex items-center justify-between mb-4"
+            >
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-[#feb249]" />
+                <h2 className="text-lg font-semibold text-gray-900">Activity Log</h2>
+              </div>
+              {showActivityLog ? (
+                <ChevronUp className="w-5 h-5 text-gray-500" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-500" />
+              )}
+            </button>
+            {showActivityLog && (
+              <div className="space-y-3">
+                {/* Pending Actions */}
+                {actions.length > 0 && (
+                  <div className="mb-4">
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">Pending Changes</h3>
+                    {actions.map(action => (
+                      <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
+                        <div className="flex items-center gap-3">
+                          {action.action === 'edit' ? (
+                            <Edit3 className="w-4 h-4 text-[#feb249]" />
+                          ) : (
+                            <X className="w-4 h-4 text-gray-500" />
+                          )}
+                          <div className="flex flex-col">
+                            <span className="text-gray-600">
+                              {action.action === 'edit' ? 'Edited' : 'Ignored'} {action.type}: {action.item}
+                            </span>
+                            <span className="text-sm text-gray-400">
+                              by {action.username} • {formatLastViewed(action.timestamp)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Completed Actions */}
+                {completedActions.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-2">Completed Changes</h3>
+                    {completedActions.map(action => (
+                      <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
+                        <div className="flex items-center gap-3">
+                          {action.status === 'accepted' ? (
+                            <Check className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <X className="w-4 h-4 text-red-500" />
+                          )}
+                          <div className="flex flex-col">
+                            <span className="text-gray-600">
+                              {action.status === 'accepted' ? 'Accepted' : 'Rejected'} {action.type}: {action.editedContent || action.item}
+                            </span>
+                            <span className="text-sm text-gray-400">
+                              by {action.username} • {formatLastViewed(action.completedAt || action.timestamp)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  // Add requirements list screen
+  if (showRequirementsList) {
+    const currentProjectRequirements = requirements.filter(req => req.projectId === selectedProject);
+    
+    if (currentProjectRequirements.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
                 <button
-                  onClick={handleUndoAllActions}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md"
+                  onClick={() => {
+                    setShowProjects(true);
+                    setShowRequirementsList(false);
+                    setSelectedProject(null);
+                  }}
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                  aria-label="Go back"
                 >
-                  <RotateCcw className="w-4 h-4" />
-                  Undo All
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-2xl font-semibold text-gray-900">Requirements</h1>
+                  <div className="relative" ref={dropdownRef}>
+                    <button 
+                      onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:text-gray-900 border border-gray-300 rounded-md hover:border-gray-400"
+                    >
+                      <span>{selectedProject ? mockProjectsList.find(p => p.id === selectedProject)?.name : "Select Project"}</span>
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
+                    {showProjectDropdown && (
+                      <div className="absolute left-0 mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                        <div className="py-1">
+                          <div className="px-3 py-2 text-xs font-medium text-gray-500">Connected Projects</div>
+                          {mockProjectsList.map((project) => (
+                            <button
+                              key={project.id}
+                              onClick={() => {
+                                setSelectedProject(project.id);
+                                setShowProjectDropdown(false);
+                              }}
+                              className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                                selectedProject === project.id ? 'bg-gray-50 text-[#feb249]' : 'text-gray-700'
+                              }`}
+                            >
+                              {project.name}
+                            </button>
+                          ))}
+                          <div className="border-t my-1"></div>
+                          <button
+                            onClick={() => {
+                              setShowProjects(false);
+                              setShowProjectDropdown(false);
+                              setSelectedProject(null);
+                              setStep(1);
+                              setNewProjectForm({
+                                name: '',
+                                description: ''
+                              });
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm text-[#feb249] hover:bg-gray-100 flex items-center gap-2"
+                          >
+                            <Plus className="w-4 h-4" />
+                            New Project
+                          </button>
+              </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                  >
+                    <MessageSquareMore className="w-4 h-4" />
+                    Ask Brewer
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAnalyzeSlider(true);
+                      setIsEditMode(false);
+                      setRequirementForm({
+                        name: '',
+                        valueStatement: '',
+                        acceptanceCriteria: ''
+                      });
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#feb249] text-white rounded-md hover:bg-[#fea849]"
+                  >
+                    <Brain className="w-4 h-4" />
+                    Analyse Requirement
+                  </button>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          {/* Empty State */}
+          <main className="max-w-7xl mx-auto px-4 py-12">
+            <div className="grid grid-cols-2 gap-6">
+              <button 
+                className="relative group bg-white rounded-lg shadow-sm p-6 border-2 border-transparent hover:border-gray-200 transition-colors"
+              >
+                <div className="flex flex-col items-center text-center">
+                  <MessageSquareMore className="w-12 h-12 text-gray-400 mb-4 group-hover:text-gray-600 transition-colors" />
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">Ask Brewer</h2>
+                  <p className="text-gray-500">Get instant answers about your project from our AI assistant</p>
+                </div>
+              </button>
+
+              <button 
+                    onClick={() => {
+                  setShowProjects(true);
+                  setShowRequirementsList(false);
+                  setSelectedProject(null);
+                }}
+                className="relative group bg-white rounded-lg shadow-sm p-6 border-2 border-[#feb249]"
+              >
+                <div className="absolute -top-3 -right-3 bg-[#feb249] text-white text-xs px-3 py-1 rounded-full">
+                  Recommended
+                </div>
+                <div className="flex flex-col items-center text-center">
+                  <Brain className="w-12 h-12 text-[#feb249] mb-4" />
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">Analyse Requirements</h2>
+                  <p className="text-gray-500">Let our AI analyze your project requirements and suggest improvements</p>
+                </div>
+              </button>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => {
+                    setShowProjects(true);
+                    setShowRequirementsList(false);
+                    setSelectedProject(null);
+                  }}
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                  aria-label="Go back"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-2xl font-semibold text-gray-900">Requirements</h1>
+                <div className="relative" ref={dropdownRef}>
+                  <button 
+                    onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:text-gray-900 border border-gray-300 rounded-md hover:border-gray-400"
+                  >
+                    <span>{selectedProject ? mockProjectsList.find(p => p.id === selectedProject)?.name : "Select Project"}</span>
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                  {showProjectDropdown && (
+                    <div className="absolute left-0 mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                      <div className="py-1">
+                        <div className="px-3 py-2 text-xs font-medium text-gray-500">Connected Projects</div>
+                        {mockProjectsList.map((project) => (
+                          <button
+                            key={project.id}
+                            onClick={() => {
+                              setSelectedProject(project.id);
+                              setShowProjectDropdown(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                              selectedProject === project.id ? 'bg-gray-50 text-[#feb249]' : 'text-gray-700'
+                            }`}
+                          >
+                            {project.name}
+                          </button>
+                        ))}
+                        <div className="border-t my-1"></div>
+                        <button
+                          onClick={() => {
+                            setShowProjects(false);
+                            setShowProjectDropdown(false);
+                            setSelectedProject(null);
+                            setStep(1);
+                            setNewProjectForm({
+                              name: '',
+                              description: ''
+                            });
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-[#feb249] hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                          New Project
+              </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                >
+                  <MessageSquareMore className="w-4 h-4" />
+                  Ask Brewer
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAnalyzeSlider(true);
+                    setIsEditMode(false);
+                    setRequirementForm({
+                      name: '',
+                      valueStatement: '',
+                      acceptanceCriteria: ''
+                    });
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-[#feb249] text-white rounded-md hover:bg-[#fea849]"
+                >
+                  <Brain className="w-4 h-4" />
+                  Analyse Requirement
                 </button>
               </div>
-              <div className="space-y-3">
-                {actions.map(action => (
-                  <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto px-4 py-8">
+          <div className="space-y-4">
+            {currentProjectRequirements.map(requirement => (
+              <div key={requirement.id} className="bg-white rounded-lg shadow-sm p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      {action.action === 'edit' ? (
-                        <Edit3 className="w-4 h-4 text-[#feb249]" />
-                      ) : (
-                        <X className="w-4 h-4 text-gray-500" />
+                      <button
+                        onClick={() => {
+                          setSelectedRequirement(requirement.id);
+                          setRequirementForm({
+                            name: requirement.name,
+                            valueStatement: requirement.valueStatement,
+                            acceptanceCriteria: requirement.acceptanceCriteria
+                          });
+                          setShowRequirementsList(false);
+                          setShowAnalysisResults(true);
+                          // Update last viewed
+                          setRequirements(prev => prev.map(r => 
+                            r.id === requirement.id 
+                              ? { ...r, lastViewed: Date.now() }
+                              : r
+                          ));
+                        }}
+                        className="text-lg font-semibold text-gray-900 hover:text-[#feb249] transition-colors"
+                      >
+                        {requirement.name}
+                      </button>
+                      {requirement.hasDraft && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">
+                          Draft
+                        </span>
                       )}
-                      <div className="flex flex-col">
-                        <span className="text-gray-600">
-                          {action.action === 'edit' ? 'Edited' : 'Ignored'} {action.type}: {action.item}
-                        </span>
-                        <span className="text-sm text-gray-400">
-                          by {action.username} • {
-                            new Date(action.timestamp).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })
-                          }
-                        </span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                      <div className="flex items-center gap-2">
+                        <span>Created:</span>
+                        <span>{formatLastViewed(requirement.createdAt)} by {requirement.createdBy}</span>
+                      </div>
+                      <span>•</span>
+                      <div className="flex items-center gap-2">
+                        <span>Last modified:</span>
+                        <span>{formatLastViewed(requirement.lastViewed)} by {requirement.editedBy}</span>
                       </div>
                     </div>
                   </div>
-                ))}
+                  <button
+                    onClick={() => handleDeleteRequirement(requirement.id, requirement.name)}
+                    className="text-gray-400 hover:text-red-500 transition-colors"
+                    aria-label={`Delete ${requirement.name} requirement`}
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-            </section>
-          )}
+            ))}
+          </div>
         </main>
+        {snackbar.show && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-4 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg">
+            <span>{snackbar.message}</span>
+            <div className="flex items-center gap-3">
+              {snackbar.action && (
+                <button
+                  onClick={snackbar.action.onClick}
+                  className="text-[#feb249] hover:text-[#fea849] font-medium"
+                >
+                  {snackbar.action.label}
+                </button>
+              )}
+              <button
+                onClick={() => setSnackbar({ show: false, message: '' })}
+                className="text-gray-300 hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -908,10 +1499,71 @@ function App() {
         {/* Header */}
         <header className="bg-white shadow-sm">
           <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="text-2xl font-semibold text-gray-900">BrewHQ</div>
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => {
+                  setShowProjects(true);
+                  setSelectedProject(null);
+                  if (showAnalysisResults) {
+                    setShowAnalysisResults(false);
+                  }
+                }}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-2xl font-semibold text-gray-900">Analyse Requirements</h1>
+              <div className="relative" ref={dropdownRef}>
+                <button 
+                  onClick={() => setShowProjectDropdown(!showProjectDropdown)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:text-gray-900 border border-gray-300 rounded-md hover:border-gray-400"
+                >
+                  <span>{selectedProject ? mockProjectsList.find(p => p.id === selectedProject)?.name : "Select Project"}</span>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                {showProjectDropdown && (
+                  <div className="absolute left-0 mt-1 w-64 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                    <div className="py-1">
+                      <div className="px-3 py-2 text-xs font-medium text-gray-500">Connected Projects</div>
+                      {mockProjectsList.map((project) => (
+                        <button
+                          key={project.id}
+                          onClick={() => {
+                            setSelectedProject(project.id);
+                            setShowProjectDropdown(false);
+                            setShowProjects(false);
+                          }}
+                          className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 ${
+                            selectedProject === project.id ? 'bg-gray-50 text-[#feb249]' : 'text-gray-700'
+                          }`}
+                        >
+                          {project.name}
+                        </button>
+                      ))}
+                      <div className="border-t my-1"></div>
+                      <button
+                        onClick={() => {
+                          setShowProjects(false);
+                          setShowProjectDropdown(false);
+                          setSelectedProject(null);
+                          setStep(1);
+                          setNewProjectForm({
+                        name: '',
+                            description: ''
+                          });
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-[#feb249] hover:bg-gray-100 flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        New Project
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
             <nav className="flex items-center gap-4">
-              <button className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">Documentation</button>
-              <button className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">Support</button>
             </nav>
           </div>
         </header>
@@ -919,7 +1571,9 @@ function App() {
         {/* Dashboard */}
         <main className="max-w-7xl mx-auto px-4 py-12">
           <div className="grid grid-cols-2 gap-6">
-            <button className="relative group bg-white rounded-lg shadow-sm p-6 border-2 border-transparent hover:border-gray-200 transition-colors">
+            <button 
+              className="relative group bg-white rounded-lg shadow-sm p-6 border-2 border-transparent hover:border-gray-200 transition-colors"
+            >
               <div className="flex flex-col items-center text-center">
                 <MessageSquareMore className="w-12 h-12 text-gray-400 mb-4 group-hover:text-gray-600 transition-colors" />
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">Ask Brewer</h2>
@@ -927,8 +1581,8 @@ function App() {
               </div>
             </button>
 
-            <button 
-              onClick={() => setShowAnalyzeSlider(true)}
+              <button
+                onClick={() => setShowAnalyzeSlider(true)}
               className="relative group bg-white rounded-lg shadow-sm p-6 border-2 border-[#feb249]"
             >
               <div className="absolute -top-3 -right-3 bg-[#feb249] text-white text-xs px-3 py-1 rounded-full">
@@ -1058,8 +1712,6 @@ function App() {
           <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <div className="text-2xl font-semibold text-gray-900">BrewHQ</div>
             <nav className="flex items-center gap-4">
-              <button className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">Documentation</button>
-              <button className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">Support</button>
             </nav>
           </div>
         </header>
@@ -1069,16 +1721,20 @@ function App() {
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-2xl font-bold text-gray-900">Your Projects</h1>
             <button 
-              onClick={() => setShowProjects(false)}
-              className="flex items-center gap-2 px-4 py-2 bg-[#feb249] text-white rounded-md hover:bg-[#fea849]"
-            >
-              <Plus className="w-4 h-4" />
+              onClick={() => {
+                setShowProjects(false);
+                setSelectedProject(null);
+                setStep(1);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#feb249] text-white rounded-md hover:bg-[#fea849]"
+              >
+                <Plus className="w-4 h-4" />
               New Project
-            </button>
-          </div>
+              </button>
+            </div>
 
           <div className="space-y-4">
-            {mockProjects.map(project => (
+            {mockProjectsList.map(project => (
               <div key={project.id} className="bg-white rounded-lg shadow-sm">
                 <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-4 flex-1">
@@ -1090,7 +1746,10 @@ function App() {
                     </button>
                     <div>
                       <button 
-                        onClick={() => setSelectedProject(project.id)}
+                        onClick={() => {
+                          setSelectedProject(project.id);
+                          setShowProjects(false);
+                        }}
                         className="text-lg font-semibold text-gray-900 hover:text-[#feb249] transition-colors"
                       >
                         {project.name}
@@ -1179,8 +1838,6 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="text-2xl font-semibold text-gray-900">BrewHQ</div>
           <nav className="flex items-center gap-4">
-            <button className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">Documentation</button>
-            <button className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">Support</button>
           </nav>
         </div>
       </header>
@@ -1219,14 +1876,18 @@ function App() {
                   <label htmlFor="name" className="block text-sm font-medium text-gray-700">Project Name</label>
                   <input 
                     type="text" 
-                    id="name" 
+                    id="name"
+                    value={newProjectForm.name}
+                    onChange={(e) => setNewProjectForm(prev => ({ ...prev, name: e.target.value }))}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-[#feb249] focus:ring-[#feb249] focus:ring-opacity-50" 
                   />
                 </div>
                 <div>
                   <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
                   <textarea 
-                    id="description" 
+                    id="description"
+                    value={newProjectForm.description}
+                    onChange={(e) => setNewProjectForm(prev => ({ ...prev, description: e.target.value }))}
                     rows={3} 
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-[#feb249] focus:ring-[#feb249] focus:ring-opacity-50" 
                   />
@@ -1255,7 +1916,9 @@ function App() {
               </div>
               <div className="space-y-4">
                 <button 
-                  onClick={() => setShowProjects(true)}
+                  onClick={() => {
+                    handleCreateProject();
+                  }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-md hover:border-gray-400 transition-colors"
                 >
                   <Github className="w-5 h-5" />
