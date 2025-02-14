@@ -1,0 +1,364 @@
+---
+description: rules for building the app
+globs: *.tsx, *.ts, *.js
+---
+# Component Creation Standards
+
+## Code Modification Guidelines
+
+### Before Making Changes
+1. Analyze existing code:
+   - Read and understand the full context of files being modified
+   - Identify dependencies and data flow
+   - Note any patterns or conventions being used
+   - Check for similar implementations elsewhere in the codebase
+
+2. Impact Assessment:
+   - Identify all components affected by the change
+   - Review prop interfaces and type definitions
+   - Check for shared state management
+   - Consider side effects on other features
+
+3. Maintain Consistency:
+   - Follow existing naming conventions
+   - Match error handling patterns
+   - Use consistent state management approaches
+   - Keep styling patterns uniform
+
+4. Preserve Functionality:
+   - Ensure existing features remain intact
+   - Maintain current prop contracts
+   - Keep existing event handlers working
+   - Preserve current state management logic
+
+### When Implementing Changes
+1. Incremental Updates:
+   - Make small, focused changes
+   - Test each modification
+   - Document significant changes
+   - Keep git commits atomic
+
+2. Code Integration:
+   - Blend new code with existing patterns
+   - Reuse existing utilities and helpers
+   - Maintain consistent error handling
+   - Follow established state management patterns
+
+### Function Declaration Checks
+
+<rule>
+name: function_declaration_checks
+description: Standards for checking function declarations when new callers are introduced
+filters:
+  - type: file_extension
+    pattern: "\\.tsx?$"
+  - type: content
+    pattern: "function|=>|interface"
+  - type: event
+    pattern: "file_modify"
+
+actions:
+  - type: suggest
+    message: |
+      When adding new function callers:
+
+      1. Function Signature Verification:
+         - Match implementation and caller signatures
+         - Verify parameter types and counts
+         - Check return type handling
+         - Update interface definitions
+         - Add to component prop interfaces
+
+      2. Implementation Guidelines:
+         - Keep declarations and implementations synced
+         - Document types thoroughly
+         - Update all existing callers
+         - Consider component dependencies
+         - Use TypeScript interfaces
+
+      3. Interface Management:
+         - Centralize in types/index.ts
+         - Export with related functions
+         - Keep prop interfaces updated
+         - Use consistent naming
+         - Document interface changes
+
+examples:
+  - input: |
+      // Bad: Mismatched types
+      interface Props {
+        onAction: (id: string) => void;
+      }
+      const Component = ({ onAction }: Props) => {
+        onAction(123); // Type mismatch
+      };
+
+      // Good: Matched types
+      interface Props {
+        onAction: (id: string) => void;
+      }
+      const Component = ({ onAction }: Props) => {
+        onAction("123"); // Correct type
+      };
+
+metadata:
+  priority: high
+  version: 1.0
+</rule>
+
+
+## File Structure
+- Layouts: `src/layouts/{ComponentName}.tsx`
+- Pages: `src/pages/{ComponentName}Page.tsx`
+- Components: `src/components/{ComponentName}/{ComponentName}.tsx`
+- Types: `src/types/index.ts` (centralized type definitions)
+
+## Component Uniqueness & Updates
+- Each component must exist in only one location
+- Components should be placed in their dedicated folders (e.g., `src/components/Button/Button.tsx`)
+- When moving or renaming components:
+  1. Update all import statements in dependent files
+  2. Remove the old component file
+  3. Update barrel files (index.ts) if present
+- When updating component interfaces:
+  1. Check all usage locations
+  2. Update dependent components to match new interface
+  3. Ensure types are properly exported from centralized location
+
+## Code Organization & Cleanup
+
+### Type Definitions
+- Keep all type definitions in `src/types/index.ts`
+- Do not create separate type files unless they are domain-specific and large
+- Remove any redundant type definitions across files
+- Export types directly from index.ts, avoid re-exporting from other files
+
+### Component Organization
+- Use barrel files (index.ts) for clean exports
+- Remove any component files that are no longer in use
+- Delete test files for removed components
+- Clean up imports when components are moved or deleted
+
+### Import Standards
+- Import from barrel files when available (e.g., `from '../components/Button'` instead of `from '../components/Button/Button'`)
+- Use relative paths for local imports
+- Remove unused imports
+- Group imports in the following order:
+  1. React and react-related packages
+  2. Third-party packages
+  3. Local components
+  4. Types
+  5. Assets/styles
+
+## Component Templates
+
+### Layout Component Template
+```tsx
+import React from 'react';
+import { Outlet } from 'react-router-dom';
+
+interface {NAME}LayoutProps {
+  // Add props here
+}
+
+export const {NAME}Layout: React.FC<{NAME}LayoutProps> = (props) => {
+  return (
+    <div>
+      {/* Add layout structure here */}
+      <Outlet />
+    </div>
+  );
+};
+```
+
+### Page Component Template
+```tsx
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+
+interface {NAME}PageProps {
+  // Add props here
+}
+
+export const {NAME}Page: React.FC<{NAME}PageProps> = (props) => {
+  const navigate = useNavigate();
+
+  return (
+    <>
+      {/* Add page content here */}
+    </>
+  );
+};
+```
+
+### Reusable Component Template
+```tsx
+import React from 'react';
+
+interface {NAME}Props {
+  // Add props here
+}
+
+export const {NAME}: React.FC<{NAME}Props> = (props) => {
+  return (
+    <div>
+      {/* Add component content here */}
+    </div>
+  );
+};
+```
+
+## Naming Conventions
+- Use PascalCase for component names
+- Suffix pages with 'Page'
+- Suffix layouts with 'Layout'
+- Use descriptive, noun-based names for components
+- Use verb-based names for handlers (e.g., handleSubmit, handleDelete)
+
+## Component Guidelines
+
+### General
+- Each component should have a single responsibility
+- Keep components small and focused
+- Extract reusable logic into custom hooks
+- Use TypeScript interfaces for props
+- Document complex props or behaviors
+
+### Layouts
+- Should focus on structural elements
+- Handle responsive design considerations
+- Include common navigation elements
+- Manage layout-specific state only
+
+### Pages
+- Should correspond to a route
+- Handle data fetching and state management
+- Include page-specific business logic
+- Compose smaller components
+
+### Components
+- Should be reusable where possible
+- Accept props for customization
+- Include prop validation
+- Handle their own styling
+- Maintain internal state only when necessary
+
+## State Management
+- Use local state for UI-only concerns
+- Lift state up when shared between components
+- Consider context for deeply nested state
+- Document state dependencies
+
+## Styling
+- Use Tailwind CSS classes
+- Follow mobile-first approach
+- Maintain consistent spacing
+- Use design tokens for colors
+- Extract common styles to components
+
+## Error Handling
+- Include error boundaries where appropriate
+- Handle loading states
+- Provide user feedback
+- Validate props and user input
+
+## Performance
+- Memoize expensive computations
+- Use React.memo for pure components
+- Lazy load routes and large components
+- Optimize re-renders
+
+## Testing Considerations
+- Write components with testing in mind
+- Keep logic testable and isolated
+- Consider adding data-testid attributes
+- Document test requirements
+
+## Cleanup Guidelines
+- Remove any unused components, hooks, or utilities
+- Delete empty or redundant files
+- Clean up test files for removed components
+- Remove unused dependencies from package.json
+- Keep only actively used assets
+- Remove commented-out code
+- Clean up console.logs and debugging code
+
+## Example Usage
+
+### Creating a New Layout
+```tsx
+// src/layouts/DashboardLayout.tsx
+import React from 'react';
+import { Outlet } from 'react-router-dom';
+
+interface DashboardLayoutProps {
+  title: string;
+}
+
+export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ title }) => {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm">
+        <h1>{title}</h1>
+      </header>
+      <main>
+        <Outlet />
+      </main>
+    </div>
+  );
+};
+```
+
+### Creating a New Page
+```tsx
+// src/pages/ProjectDetailsPage.tsx
+import React from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+
+interface ProjectDetailsPageProps {
+  onSave: (data: any) => void;
+}
+
+export const ProjectDetailsPage: React.FC<ProjectDetailsPageProps> = ({ onSave }) => {
+  const navigate = useNavigate();
+  const { id } = useParams();
+
+  return (
+    <div className="p-6">
+      <h1>Project Details</h1>
+      {/* Add page content */}
+    </div>
+  );
+};
+```
+
+### Creating a New Component
+```tsx
+// src/components/Button/Button.tsx
+import React from 'react';
+
+interface ButtonProps {
+  variant?: 'primary' | 'secondary';
+  onClick?: () => void;
+  children: React.ReactNode;
+}
+
+export const Button: React.FC<ButtonProps> = ({ 
+  variant = 'primary', 
+  onClick, 
+  children 
+}) => {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 rounded-md ${
+        variant === 'primary' 
+          ? 'bg-[#feb249] text-white hover:bg-[#fea849]' 
+          : 'bg-gray-200 text-gray-800 hover:bg-gray-300'
+      }`}
+    >
+      {children}
+    </button>
+  );
+};
+```
