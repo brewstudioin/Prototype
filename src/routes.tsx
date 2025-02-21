@@ -6,6 +6,7 @@ import { NewProjectPage } from './pages/NewProjectPage';
 import { RequirementListPage } from './pages/RequirementListPage';
 import { Project, Requirement, RequirementForm as RequirementFormType, ImpactAnalysis } from './types';
 import { ImpactAnalysisPage } from './pages/ImpactAnalysisPage';
+import { ChatPage } from './pages/ChatPage';
 
 interface RouteProps {
   projects: Project[];
@@ -48,6 +49,10 @@ const createRoutes = (props: RouteProps): RouteObject[] => [
           onSelectRequirement={props.onSelectRequirement}
           onCreateRequirement={props.onCreateRequirement}
         />,
+      },
+      {
+        path: 'projects/:projectId/chat',
+        element: <ChatPage />,
       },
       {
         path: 'new-project',

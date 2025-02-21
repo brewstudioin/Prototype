@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Brain, Network, FileCode, Database, X, Edit3, RotateCcw, Check, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { ArrowLeft, Brain, Network, FileCode, Database, X, Edit3, RotateCcw, Check, ChevronDown, ChevronUp, Plus, ClipboardList } from 'lucide-react';
 import type { RequirementForm, ImpactAnalysis, ImpactAction } from '../types';
-import { DependenciesSection } from '../components/Impact/DependenciesSection';
 import { RisksSection } from '../components/Impact/RisksSection';
 import { ImpactColumn } from '../components/Impact/ImpactColumn';
+
+type TabValue = 'impact' | 'activity';
 
 interface LocationState {
   requirement: RequirementForm;
@@ -17,10 +18,6 @@ export const ImpactAnalysisPage: React.FC = () => {
 
   // Mock analysis data for demonstration
   const [analysis, setAnalysis] = useState<ImpactAnalysis>({
-    dependencies: [
-      { id: 'd1', name: 'Authentication Service' },
-      { id: 'd2', name: 'Payment Gateway' }
-    ],
     risks: [
       { 
         id: 'r1', 
@@ -51,7 +48,6 @@ export const ImpactAnalysisPage: React.FC = () => {
   });
 
   const [showImpactDetails, setShowImpactDetails] = useState(false);
-  const [showActivityLog, setShowActivityLog] = useState(false);
   const [showReviewChangesSlider, setShowReviewChangesSlider] = useState(false);
   const [showRequirementSlider, setShowRequirementSlider] = useState(false);
   const [editedRequirement, setEditedRequirement] = useState<RequirementForm | null>(null);
@@ -66,8 +62,23 @@ export const ImpactAnalysisPage: React.FC = () => {
   const [selectedImpactType, setSelectedImpactType] = useState<string>('');
   const [selectedImpactSubtype, setSelectedImpactSubtype] = useState<string>('');
   const [mitigationText, setMitigationText] = useState('');
+  const [activeTab, setActiveTab] = useState<TabValue>('impact');
+
+  // Function to get citation number for an item
+  const getCitationNumber = (itemId: string): number => {
+    const allItems = [
+      ...analysis.risks,
+      ...analysis.uiUxImpacts,
+      ...analysis.codeImpacts,
+      ...analysis.dataImpacts
+    ];
+    return allItems.findIndex(item => item.id === itemId) + 1;
+  };
 
   const handleAction = (id: string, type: 'risk' | 'ui' | 'code' | 'data', item: string, action: 'edit' | 'ignore') => {
+    // Remove from completedActions if this was a rejected action being reconsidered
+    setCompletedActions(prev => prev.filter(a => a.id !== id));
+
     const newAction: ImpactAction = {
       id,
       type,
@@ -181,19 +192,7 @@ export const ImpactAnalysisPage: React.FC = () => {
         completedAt: timestamp
       };
 
-      if (selectedImpactType === 'dependency') {
-        setAnalysis(prev => ({
-          ...prev,
-          dependencies: [
-            { 
-              id: newId, 
-              name: newImpactText.trim(),
-              isManual: true 
-            },
-            ...prev.dependencies
-          ]
-        }));
-      } else if (selectedImpactType === 'risk') {
+      if (selectedImpactType === 'risk') {
         setAnalysis(prev => ({
           ...prev,
           risks: [
@@ -237,28 +236,6 @@ export const ImpactAnalysisPage: React.FC = () => {
       setSelectedImpactType('');
       setSelectedImpactSubtype('');
       setShowAddToRequirementSlider(false);
-    }
-  };
-
-  const handleRemoveDependency = (id: string) => {
-    setAnalysis(prev => ({
-      ...prev,
-      dependencies: prev.dependencies.filter(dep => dep.id !== id)
-    }));
-
-    // Add to completed actions as a removal
-    const removedDep = analysis.dependencies.find(dep => dep.id === id);
-    if (removedDep) {
-      setCompletedActions(prev => [{
-        id,
-        type: 'dependency',
-        item: removedDep.name,
-        action: 'edit',
-        timestamp: Date.now(),
-        username: 'Current User', // TODO: Get from auth context
-        status: 'removed',
-        completedAt: Date.now()
-      }, ...prev]);
     }
   };
 
@@ -366,28 +343,78 @@ export const ImpactAnalysisPage: React.FC = () => {
               <h1 className="text-2xl font-semibold text-gray-900">Impact Analysis</h1>
             </div>
             <div className="flex gap-4">
-              <button 
-                onClick={() => setShowReviewChangesSlider(true)}
-                disabled={actions.length === 0}
-                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  actions.length > 0 
-                    ? 'text-white bg-[#feb249] hover:bg-[#fea849]' 
-                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                }`}
+              <button
+                onClick={handleEditRequirement}
+                className="px-4 py-2 text-[#feb249] bg-white border border-[#feb249] rounded-md hover:bg-[#fff5e6]"
               >
-                Review Changes
+                Edit Requirement
+              </button>
+              <button
+                onClick={handleAddToRequirement}
+                className="px-4 py-2 text-[#feb249] bg-white border border-[#feb249] rounded-md hover:bg-[#fff5e6]"
+              >
+                Add Impact/Risk
+              </button>
+              <button 
+                onClick={() => {
+                  if (actions.length === 0) {
+                    // Accept all initial impacts
+                    const allImpacts = [
+                      ...analysis.risks.map(risk => ({
+                        id: risk.id,
+                        type: 'risk' as const,
+                        item: risk.mitigation,
+                        action: 'edit' as const,
+                        timestamp: Date.now(),
+                        username: 'Current User',
+                        status: 'accepted' as const,
+                        completedAt: Date.now()
+                      })),
+                      ...analysis.uiUxImpacts.map(impact => ({
+                        id: impact.id,
+                        type: 'ui' as const,
+                        item: impact.description,
+                        action: 'edit' as const,
+                        timestamp: Date.now(),
+                        username: 'Current User',
+                        status: 'accepted' as const,
+                        completedAt: Date.now()
+                      })),
+                      ...analysis.codeImpacts.map(impact => ({
+                        id: impact.id,
+                        type: 'code' as const,
+                        item: impact.description,
+                        action: 'edit' as const,
+                        timestamp: Date.now(),
+                        username: 'Current User',
+                        status: 'accepted' as const,
+                        completedAt: Date.now()
+                      })),
+                      ...analysis.dataImpacts.map(impact => ({
+                        id: impact.id,
+                        type: 'data' as const,
+                        item: impact.description,
+                        action: 'edit' as const,
+                        timestamp: Date.now(),
+                        username: 'Current User',
+                        status: 'accepted' as const,
+                        completedAt: Date.now()
+                      }))
+                    ];
+                    setCompletedActions(prev => [...allImpacts, ...prev]);
+                  } else {
+                    setShowReviewChangesSlider(true);
+                  }
+                }}
+                disabled={false}
+                className="px-4 py-2 text-sm font-medium rounded-md transition-colors text-white bg-[#feb249] hover:bg-[#fea849]"
+              >
+                {actions.length === 0 ? 'Accept all Changes' : 'Review Changes'}
                 {actions.length > 0 && (
                   <span className="ml-2 px-2 py-0.5 text-xs bg-white text-[#feb249] rounded-full">
                     {actions.length}
                   </span>
                 )}
-              </button>
-              <button
-                onClick={handleAddToRequirement}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#feb249] bg-white border border-[#feb249] rounded-md hover:bg-[#fff5e6]"
-              >
-                <Plus className="w-4 h-4" />
-                Add to Requirement
               </button>
             </div>
           </div>
@@ -462,7 +489,6 @@ export const ImpactAnalysisPage: React.FC = () => {
                       <option value="">Select a category</option>
                       <option value="risk">Risk</option>
                       <option value="impact">Impact</option>
-                      <option value="dependency">Dependency</option>
                     </select>
                   </div>
 
@@ -567,168 +593,206 @@ export const ImpactAnalysisPage: React.FC = () => {
                 <h2 className="text-xl font-semibold text-gray-900">
                   {requirement.name || 'Untitled Requirement'}
                 </h2>
-                <button
-                  onClick={handleEditRequirement}
-                  className="p-1 text-gray-400 hover:text-[#feb249] rounded-full hover:bg-[#fff5e6]"
-                  title="Edit requirement"
-                >
-                  <Edit3 className="w-5 h-5" />
-                </button>
               </div>
               <p className="text-gray-600">{requirement.valueStatement}</p>
             </div>
           </div>
         </section>
 
-        {/* Dependencies Section */}
-        <DependenciesSection 
-          dependencies={analysis.dependencies} 
-          onRemove={handleRemoveDependency}
-        />
-
-        {/* Risks Section */}
-        <RisksSection
-          risks={analysis.risks}
-          actions={actions}
-          editingMitigationId={editingMitigationId}
-          editedMitigationContent={editedMitigationContent}
-          onAction={handleAction}
-          onSubmitMitigation={handleSubmitMitigationEdit}
-          onDiscardEdit={handleDiscardEdit}
-          onEditMitigationChange={setEditedMitigationContent}
-          onRemove={handleRemoveRisk}
-        />
-
-        {/* Impact Summary */}
-        <section className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Impact Summary</h2>
-          <p className="text-gray-600">{analysis.executiveSummary}</p>
-        </section>
-
-        {/* Impact Columns */}
-        <div className="grid grid-cols-3 gap-6 mb-8">
-          <ImpactColumn
-            title="UI/UX"
-            icon={<Network className="w-5 h-5 text-[#feb249]" />}
-            impacts={analysis.uiUxImpacts}
-            actions={actions}
-            editingImpactId={editingImpactId}
-            editedImpactContent={editedImpactContent}
-            impactType="ui"
-            onAction={handleAction}
-            onSubmitImpact={handleSubmitImpactEdit}
-            onDiscardEdit={handleDiscardEdit}
-            onEditImpactChange={setEditedImpactContent}
-            onRemove={(id) => handleRemoveImpact(id, 'ui')}
-          />
-          <ImpactColumn
-            title="Code Source"
-            icon={<FileCode className="w-5 h-5 text-[#feb249]" />}
-            impacts={analysis.codeImpacts}
-            actions={actions}
-            editingImpactId={editingImpactId}
-            editedImpactContent={editedImpactContent}
-            impactType="code"
-            onAction={handleAction}
-            onSubmitImpact={handleSubmitImpactEdit}
-            onDiscardEdit={handleDiscardEdit}
-            onEditImpactChange={setEditedImpactContent}
-            onRemove={(id) => handleRemoveImpact(id, 'code')}
-          />
-          <ImpactColumn
-            title="Data Source"
-            icon={<Database className="w-5 h-5 text-[#feb249]" />}
-            impacts={analysis.dataImpacts}
-            actions={actions}
-            editingImpactId={editingImpactId}
-            editedImpactContent={editedImpactContent}
-            impactType="data"
-            onAction={handleAction}
-            onSubmitImpact={handleSubmitImpactEdit}
-            onDiscardEdit={handleDiscardEdit}
-            onEditImpactChange={setEditedImpactContent}
-            onRemove={(id) => handleRemoveImpact(id, 'data')}
-          />
-        </div>
-
-        {/* Activity Log */}
-        <section className="bg-white rounded-lg shadow-sm p-6">
-          <button 
-            onClick={() => setShowActivityLog(!showActivityLog)}
-            className="w-full flex items-center justify-between mb-4"
+        {/* Tabs */}
+        <div className="flex items-center gap-4 mb-8 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('impact')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'impact'
+                ? 'border-[#feb249] text-[#feb249]'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
           >
-            <div className="flex items-center gap-2">
-              <RotateCcw className="w-5 h-5 text-[#feb249]" />
-              <h2 className="text-lg font-semibold text-gray-900">Activity Log</h2>
-            </div>
-            {showActivityLog ? (
-              <ChevronUp className="w-5 h-5 text-gray-500" />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-gray-500" />
+            Impact Analysis
+          </button>
+          <button
+            onClick={() => setActiveTab('activity')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === 'activity'
+                ? 'border-[#feb249] text-[#feb249]'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            Activity Log
+            {actions.length > 0 && (
+              <span className="ml-1 px-2 py-0.5 text-xs bg-[#fff5e6] text-[#feb249] rounded-full">
+                {actions.length}
+              </span>
             )}
           </button>
-          {showActivityLog && (
-            <div className="space-y-3">
+        </div>
+
+        {activeTab === 'impact' ? (
+          <>
+            {/* Risks Section */}
+            <RisksSection
+              risks={analysis.risks}
+              actions={actions}
+              editingMitigationId={editingMitigationId}
+              editedMitigationContent={editedMitigationContent}
+              onAction={handleAction}
+              onSubmitMitigation={handleSubmitMitigationEdit}
+              onDiscardEdit={handleDiscardEdit}
+              onEditMitigationChange={setEditedMitigationContent}
+              onRemove={handleRemoveRisk}
+              completedActions={completedActions}
+              getCitationNumber={getCitationNumber}
+            />
+
+            {/* Impact Summary */}
+            <section className="bg-white rounded-lg shadow-sm p-6 mb-8">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Impact Summary</h2>
+              <p className="text-gray-600">{analysis.executiveSummary}</p>
+            </section>
+
+            {/* Impact Columns */}
+            <div className="grid grid-cols-3 gap-6">
+              <ImpactColumn
+                title="UI/UX"
+                icon={<Network className="w-5 h-5 text-[#feb249]" />}
+                impacts={analysis.uiUxImpacts}
+                actions={actions}
+                editingImpactId={editingImpactId}
+                editedImpactContent={editedImpactContent}
+                impactType="ui"
+                onAction={handleAction}
+                onSubmitImpact={handleSubmitImpactEdit}
+                onDiscardEdit={handleDiscardEdit}
+                onEditImpactChange={setEditedImpactContent}
+                onRemove={(id) => handleRemoveImpact(id, 'ui')}
+                completedActions={completedActions}
+                getCitationNumber={getCitationNumber}
+              />
+              <ImpactColumn
+                title="Code Source"
+                icon={<FileCode className="w-5 h-5 text-[#feb249]" />}
+                impacts={analysis.codeImpacts}
+                actions={actions}
+                editingImpactId={editingImpactId}
+                editedImpactContent={editedImpactContent}
+                impactType="code"
+                onAction={handleAction}
+                onSubmitImpact={handleSubmitImpactEdit}
+                onDiscardEdit={handleDiscardEdit}
+                onEditImpactChange={setEditedImpactContent}
+                onRemove={(id) => handleRemoveImpact(id, 'code')}
+                completedActions={completedActions}
+                getCitationNumber={getCitationNumber}
+              />
+              <ImpactColumn
+                title="Data Source"
+                icon={<Database className="w-5 h-5 text-[#feb249]" />}
+                impacts={analysis.dataImpacts}
+                actions={actions}
+                editingImpactId={editingImpactId}
+                editedImpactContent={editedImpactContent}
+                impactType="data"
+                onAction={handleAction}
+                onSubmitImpact={handleSubmitImpactEdit}
+                onDiscardEdit={handleDiscardEdit}
+                onEditImpactChange={setEditedImpactContent}
+                onRemove={(id) => handleRemoveImpact(id, 'data')}
+                completedActions={completedActions}
+                getCitationNumber={getCitationNumber}
+              />
+            </div>
+          </>
+        ) : (
+          <section className="bg-white rounded-lg shadow-sm p-6">
+            <div className="space-y-6">
               {/* Pending Actions */}
               {actions.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Pending Changes</h3>
-                  {actions.map(action => (
-                    <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
-                      <div className="flex items-center gap-3">
-                        {action.action === 'edit' ? (
-                          <Edit3 className="w-4 h-4 text-[#feb249]" />
-                        ) : (
-                          <X className="w-4 h-4 text-gray-500" />
-                        )}
-                        <div className="flex flex-col">
-                          <span className="text-gray-600">
-                            {action.action === 'edit' ? 'Edited' : 'Ignored'} {action.type}: {action.item}
-                          </span>
-                          <span className="text-sm text-gray-400">
-                            by {action.username} • {formatTimestamp(action.timestamp)}
-                          </span>
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-4">Pending Changes</h3>
+                  <div className="space-y-3">
+                    {actions.map(action => (
+                      <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          {action.action === 'edit' ? (
+                            <Edit3 className="w-4 h-4 text-[#feb249]" />
+                          ) : (
+                            <X className="w-4 h-4 text-gray-500" />
+                          )}
+                          <div className="flex flex-col">
+                            <span className="text-gray-600">
+                              {action.action === 'edit' ? 'Edited' : 'Ignored'} {action.type}: {action.item}
+                            </span>
+                            <span className="text-sm text-gray-400">
+                              by {action.username} • {formatTimestamp(action.timestamp)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleAcceptChange(action)}
+                            className="flex items-center gap-1 px-3 py-1 text-sm text-green-600 hover:bg-green-50 rounded-md"
+                          >
+                            <Check className="w-4 h-4" />
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => handleRejectChange(action)}
+                            className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-md"
+                          >
+                            <X className="w-4 h-4" />
+                            Reject
+                          </button>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
 
               {/* Completed Actions */}
               {completedActions.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-2">Completed Changes</h3>
-                  {completedActions.map(action => (
-                    <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
-                      <div className="flex items-center gap-3">
-                        {action.status === 'added' ? (
-                          <Plus className="w-4 h-4 text-[#feb249]" />
-                        ) : action.status === 'removed' ? (
-                          <X className="w-4 h-4 text-red-500" />
-                        ) : action.status === 'accepted' ? (
-                          <Check className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <X className="w-4 h-4 text-red-500" />
-                        )}
-                        <div className="flex flex-col">
-                          <span className="text-gray-600">
-                            {action.status === 'added' ? 'Added new' :
-                             action.status === 'removed' ? 'Removed' :
-                             action.status === 'accepted' ? 'Accepted' : 'Rejected'} {action.type}: {action.editedContent || action.item}
-                          </span>
-                          <span className="text-sm text-gray-400">
-                            by {action.username} • {formatTimestamp(action.completedAt || action.timestamp)}
-                          </span>
+                  <h3 className="text-sm font-medium text-gray-500 mb-4">Completed Changes</h3>
+                  <div className="space-y-3">
+                    {completedActions.map(action => (
+                      <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          {action.status === 'added' ? (
+                            <Plus className="w-4 h-4 text-[#feb249]" />
+                          ) : action.status === 'removed' ? (
+                            <X className="w-4 h-4 text-red-500" />
+                          ) : action.status === 'accepted' ? (
+                            <Check className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <X className="w-4 h-4 text-red-500" />
+                          )}
+                          <div className="flex flex-col">
+                            <span className="text-gray-600">
+                              {action.status === 'added' ? 'Added new' :
+                               action.status === 'removed' ? 'Removed' :
+                               action.status === 'accepted' ? 'Accepted' : 'Rejected'} {action.type}: {action.editedContent || action.item}
+                            </span>
+                            <span className="text-sm text-gray-400">
+                              by {action.username} • {formatTimestamp(action.completedAt || action.timestamp)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {actions.length === 0 && completedActions.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  No activity to show
                 </div>
               )}
             </div>
-          )}
-        </section>
+          </section>
+        )}
       </main>
 
       {/* Review Changes Slider */}
@@ -774,9 +838,10 @@ export const ImpactAnalysisPage: React.FC = () => {
                       <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-900 min-h-[96px] space-y-3">
                         {requirement.acceptanceCriteria || 'No acceptance criteria provided'}
                         
-                        {actions.length > 0 && (
+                        {(actions.length > 0 || completedActions.length > 0) && (
                           <div className="border-t border-gray-200 mt-3 pt-3">
                             <div className="space-y-2">
+                              {/* Pending Actions */}
                               {actions.map(action => (
                                 <div key={action.timestamp} className="flex items-center justify-between p-2 bg-white rounded-md">
                                   <div className="flex items-center gap-2">
@@ -815,6 +880,38 @@ export const ImpactAnalysisPage: React.FC = () => {
                                       Reject
                                     </button>
                                   </div>
+                                </div>
+                              ))}
+
+                              {/* Rejected Actions */}
+                              {completedActions.filter(action => action.status === 'rejected').map(action => (
+                                <div key={action.timestamp} className="flex items-center justify-between p-2 bg-red-50 rounded-md">
+                                  <div className="flex items-center gap-2">
+                                    <X className="w-4 h-4 text-red-500" />
+                                    <div className="text-sm">
+                                      <span className="text-gray-600">
+                                        {action.type === 'risk' ? 'Risk Mitigation' :
+                                         action.type === 'ui' ? 'UI/UX Impact' :
+                                         action.type === 'code' ? 'Code Impact' : 'Data Impact'}:
+                                      </span>
+                                      <div className="mt-1 pl-4">
+                                        <div className="line-through text-gray-500">{action.editedContent || action.item}</div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                          Rejected by {action.username} • {new Date(action.completedAt || action.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      if (action.type === 'risk' || action.type === 'ui' || action.type === 'code' || action.type === 'data') {
+                                        handleAction(action.id, action.type, action.item, 'edit');
+                                      }
+                                    }}
+                                    className="text-sm text-[#feb249] hover:text-[#fea849] whitespace-nowrap"
+                                  >
+                                    Reconsider
+                                  </button>
                                 </div>
                               ))}
                             </div>

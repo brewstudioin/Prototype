@@ -107,6 +107,7 @@ export const RequirementListPage: React.FC<RequirementListPageProps> = ({
             {currentProjectRequirements.length > 0 && (
               <div className="flex items-center gap-3">
                 <button
+                  onClick={() => navigate(`/projects/${projectId}/chat`)}
                   className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
                 >
                   <MessageSquareMore className="w-4 h-4" />

@@ -79,7 +79,6 @@ export interface RequirementForm {
 }
 
 export interface ImpactAnalysis {
-  dependencies: Dependency[];
   risks: Risk[];
   uiUxImpacts: Impact[];
   codeImpacts: Impact[];
