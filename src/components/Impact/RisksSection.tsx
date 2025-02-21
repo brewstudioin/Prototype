@@ -11,6 +11,7 @@ interface RisksSectionProps {
   onSubmitMitigation: (riskId: string) => void;
   onDiscardEdit: (riskId: string) => void;
   onEditMitigationChange: (content: string) => void;
+  onRemove?: (id: string) => void;
 }
 
 export const RisksSection: React.FC<RisksSectionProps> = ({
@@ -22,6 +23,7 @@ export const RisksSection: React.FC<RisksSectionProps> = ({
   onSubmitMitigation,
   onDiscardEdit,
   onEditMitigationChange,
+  onRemove,
 }) => {
   return (
     <section className="bg-white rounded-lg shadow-sm p-6 mb-8">
@@ -32,17 +34,28 @@ export const RisksSection: React.FC<RisksSectionProps> = ({
           
           return (
             <div key={risk.id} className="bg-gray-50 rounded-lg overflow-hidden">
-              <div className="flex items-center p-4">
-                <h3 className="font-medium text-gray-900">
-                  {risk.description}
-                </h3>
-                <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1 ml-2 ${
-                  risk.severity === 'High' ? 'bg-red-100 text-red-800' :
-                  risk.severity === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                  'bg-green-100 text-green-800'
-                }`}>
-                  {risk.severity} Risk
-                </span>
+              <div className="flex items-center justify-between p-4">
+                <div className="flex items-center">
+                  <h3 className="font-medium text-gray-900">
+                    {risk.description}
+                  </h3>
+                  <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1 ml-2 ${
+                    risk.severity === 'High' ? 'bg-red-100 text-red-800' :
+                    risk.severity === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-green-100 text-green-800'
+                  }`}>
+                    {risk.severity} Risk
+                  </span>
+                </div>
+                {risk.isManual && onRemove && (
+                  <button
+                    onClick={() => onRemove(risk.id)}
+                    className="p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"
+                    title="Remove risk"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <div className="border-t border-gray-200 bg-white p-4">
                 <div className="flex items-center gap-2 text-sm text-gray-600">

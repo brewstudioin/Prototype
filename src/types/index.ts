@@ -90,6 +90,7 @@ export interface ImpactAnalysis {
 export interface Dependency {
   id: string;
   name: string;
+  isManual?: boolean;
 }
 
 export interface Risk {
@@ -97,6 +98,7 @@ export interface Risk {
   description: string;
   severity: 'High' | 'Medium' | 'Low';
   mitigation: string;
+  isManual?: boolean;
 }
 
 export interface Impact {
@@ -104,16 +106,17 @@ export interface Impact {
   description: string;
   editedContent?: string;
   status?: 'pending' | 'accepted' | 'rejected';
+  isManual?: boolean;
 }
 
 export interface ImpactAction {
   id: string;
-  type: 'risk' | 'ui' | 'code' | 'data';
+  type: 'risk' | 'ui' | 'code' | 'data' | 'dependency' | 'requirement';
   item: string;
   action: 'edit' | 'ignore';
   timestamp: number;
   username: string;
   editedContent?: string;
-  status?: 'accepted' | 'rejected';
+  status?: 'accepted' | 'rejected' | 'added' | 'removed' | 'edited';
   completedAt?: number;
 } 

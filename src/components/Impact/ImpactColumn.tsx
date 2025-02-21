@@ -14,6 +14,7 @@ interface ImpactColumnProps {
   onSubmitImpact: (impactId: string) => void;
   onDiscardEdit: (impactId: string) => void;
   onEditImpactChange: (content: string) => void;
+  onRemove?: (id: string) => void;
 }
 
 export const ImpactColumn: React.FC<ImpactColumnProps> = ({
@@ -28,6 +29,7 @@ export const ImpactColumn: React.FC<ImpactColumnProps> = ({
   onSubmitImpact,
   onDiscardEdit,
   onEditImpactChange,
+  onRemove,
 }) => {
   return (
     <section className="bg-white rounded-lg shadow-sm p-6">
@@ -41,18 +43,31 @@ export const ImpactColumn: React.FC<ImpactColumnProps> = ({
           
           return (
             <div key={impact.id} className="p-4 bg-gray-50 rounded-lg">
-              {editingImpactId === impact.id ? (
-                <textarea
-                  value={editedImpactContent}
-                  onChange={(e) => onEditImpactChange(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent mb-3"
-                  rows={2}
-                />
-              ) : (
-                <p className="text-gray-600 mb-3">
-                  {impactAction?.editedContent || impact.description}
-                </p>
-              )}
+              <div className="flex items-center justify-between mb-3">
+                {editingImpactId === impact.id ? (
+                  <textarea
+                    value={editedImpactContent}
+                    onChange={(e) => onEditImpactChange(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                    rows={2}
+                  />
+                ) : (
+                  <div className="flex-1">
+                    <p className="text-gray-600">
+                      {impactAction?.editedContent || impact.description}
+                    </p>
+                  </div>
+                )}
+                {impact.isManual && onRemove && !editingImpactId && (
+                  <button
+                    onClick={() => onRemove(impact.id)}
+                    className="ml-2 p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-50"
+                    title="Remove impact"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
               <div className="flex gap-2">
                 {!impactAction ? (
                   <>

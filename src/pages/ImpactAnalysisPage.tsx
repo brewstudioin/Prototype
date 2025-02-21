@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Brain, Network, FileCode, Database, X, Edit3, RotateCcw, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Brain, Network, FileCode, Database, X, Edit3, RotateCcw, Check, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import type { RequirementForm, ImpactAnalysis, ImpactAction } from '../types';
 import { DependenciesSection } from '../components/Impact/DependenciesSection';
 import { RisksSection } from '../components/Impact/RisksSection';
@@ -16,7 +16,7 @@ export const ImpactAnalysisPage: React.FC = () => {
   const { requirement } = location.state as LocationState;
 
   // Mock analysis data for demonstration
-  const analysis: ImpactAnalysis = {
+  const [analysis, setAnalysis] = useState<ImpactAnalysis>({
     dependencies: [
       { id: 'd1', name: 'Authentication Service' },
       { id: 'd2', name: 'Payment Gateway' }
@@ -48,17 +48,24 @@ export const ImpactAnalysisPage: React.FC = () => {
       { id: 'd2', description: 'Database migration required' }
     ],
     executiveSummary: 'This requirement introduces significant changes to the payment processing workflow, affecting multiple system components. Key considerations include security implications and user experience improvements.'
-  };
+  });
 
   const [showImpactDetails, setShowImpactDetails] = useState(false);
   const [showActivityLog, setShowActivityLog] = useState(false);
   const [showReviewChangesSlider, setShowReviewChangesSlider] = useState(false);
+  const [showRequirementSlider, setShowRequirementSlider] = useState(false);
+  const [editedRequirement, setEditedRequirement] = useState<RequirementForm | null>(null);
   const [actions, setActions] = useState<ImpactAction[]>([]);
   const [completedActions, setCompletedActions] = useState<ImpactAction[]>([]);
   const [editingMitigationId, setEditingMitigationId] = useState<string | null>(null);
   const [editedMitigationContent, setEditedMitigationContent] = useState('');
   const [editingImpactId, setEditingImpactId] = useState<string | null>(null);
   const [editedImpactContent, setEditedImpactContent] = useState('');
+  const [showAddToRequirementSlider, setShowAddToRequirementSlider] = useState(false);
+  const [newImpactText, setNewImpactText] = useState('');
+  const [selectedImpactType, setSelectedImpactType] = useState<string>('');
+  const [selectedImpactSubtype, setSelectedImpactSubtype] = useState<string>('');
+  const [mitigationText, setMitigationText] = useState('');
 
   const handleAction = (id: string, type: 'risk' | 'ui' | 'code' | 'data', item: string, action: 'edit' | 'ignore') => {
     const newAction: ImpactAction = {
@@ -153,6 +160,195 @@ export const ImpactAnalysisPage: React.FC = () => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const handleAddToRequirement = () => {
+    setShowAddToRequirementSlider(true);
+  };
+
+  const handleSubmitNewImpact = () => {
+    if (newImpactText.trim()) {
+      const timestamp = Date.now();
+      const newId = `${selectedImpactType}-${timestamp}`;
+
+      // Create a new action for the activity log
+      const newAction: ImpactAction = {
+        id: newId,
+        type: selectedImpactType === 'impact' ? (selectedImpactSubtype as 'ui' | 'code' | 'data') : 'risk',
+        item: newImpactText.trim(),
+        action: 'edit',
+        timestamp,
+        username: 'Current User', // TODO: Get from auth context
+        status: 'added',
+        completedAt: timestamp
+      };
+
+      if (selectedImpactType === 'dependency') {
+        setAnalysis(prev => ({
+          ...prev,
+          dependencies: [
+            { 
+              id: newId, 
+              name: newImpactText.trim(),
+              isManual: true 
+            },
+            ...prev.dependencies
+          ]
+        }));
+      } else if (selectedImpactType === 'risk') {
+        setAnalysis(prev => ({
+          ...prev,
+          risks: [
+            {
+              id: newId,
+              description: newImpactText.trim(),
+              severity: 'Medium', // Default severity
+              mitigation: mitigationText.trim(),
+              isManual: true
+            },
+            ...prev.risks
+          ]
+        }));
+      } else if (selectedImpactType === 'impact') {
+        const impact = { 
+          id: newId, 
+          description: newImpactText.trim(),
+          isManual: true 
+        };
+        
+        setAnalysis(prev => ({
+          ...prev,
+          ...(selectedImpactSubtype === 'ui' && {
+            uiUxImpacts: [impact, ...prev.uiUxImpacts]
+          }),
+          ...(selectedImpactSubtype === 'code' && {
+            codeImpacts: [impact, ...prev.codeImpacts]
+          }),
+          ...(selectedImpactSubtype === 'data' && {
+            dataImpacts: [impact, ...prev.dataImpacts]
+          })
+        }));
+      }
+
+      // Add to completed actions
+      setCompletedActions(prev => [newAction, ...prev]);
+
+      // Reset form
+      setNewImpactText('');
+      setMitigationText('');
+      setSelectedImpactType('');
+      setSelectedImpactSubtype('');
+      setShowAddToRequirementSlider(false);
+    }
+  };
+
+  const handleRemoveDependency = (id: string) => {
+    setAnalysis(prev => ({
+      ...prev,
+      dependencies: prev.dependencies.filter(dep => dep.id !== id)
+    }));
+
+    // Add to completed actions as a removal
+    const removedDep = analysis.dependencies.find(dep => dep.id === id);
+    if (removedDep) {
+      setCompletedActions(prev => [{
+        id,
+        type: 'dependency',
+        item: removedDep.name,
+        action: 'edit',
+        timestamp: Date.now(),
+        username: 'Current User', // TODO: Get from auth context
+        status: 'removed',
+        completedAt: Date.now()
+      }, ...prev]);
+    }
+  };
+
+  const handleRemoveRisk = (id: string) => {
+    setAnalysis(prev => ({
+      ...prev,
+      risks: prev.risks.filter(risk => risk.id !== id)
+    }));
+
+    // Add to completed actions as a removal
+    const removedRisk = analysis.risks.find(risk => risk.id === id);
+    if (removedRisk) {
+      setCompletedActions(prev => [{
+        id,
+        type: 'risk',
+        item: removedRisk.description,
+        action: 'edit',
+        timestamp: Date.now(),
+        username: 'Current User', // TODO: Get from auth context
+        status: 'removed',
+        completedAt: Date.now()
+      }, ...prev]);
+    }
+  };
+
+  const handleRemoveImpact = (id: string, type: 'ui' | 'code' | 'data') => {
+    setAnalysis(prev => ({
+      ...prev,
+      ...(type === 'ui' && {
+        uiUxImpacts: prev.uiUxImpacts.filter(impact => impact.id !== id)
+      }),
+      ...(type === 'code' && {
+        codeImpacts: prev.codeImpacts.filter(impact => impact.id !== id)
+      }),
+      ...(type === 'data' && {
+        dataImpacts: prev.dataImpacts.filter(impact => impact.id !== id)
+      })
+    }));
+
+    // Add to completed actions as a removal
+    const impactArray = type === 'ui' ? analysis.uiUxImpacts :
+                       type === 'code' ? analysis.codeImpacts :
+                       analysis.dataImpacts;
+    const removedImpact = impactArray.find(impact => impact.id === id);
+    if (removedImpact) {
+      setCompletedActions(prev => [{
+        id,
+        type,
+        item: removedImpact.description,
+        action: 'edit',
+        timestamp: Date.now(),
+        username: 'Current User', // TODO: Get from auth context
+        status: 'removed',
+        completedAt: Date.now()
+      }, ...prev]);
+    }
+  };
+
+  const handleEditRequirement = () => {
+    setEditedRequirement(requirement);
+    setShowRequirementSlider(true);
+  };
+
+  const handleUpdateRequirement = () => {
+    if (editedRequirement) {
+      // TODO: Add API call to update requirement
+      const timestamp = Date.now();
+      setCompletedActions(prev => [{
+        id: `req-${timestamp}`,
+        type: 'requirement',
+        item: requirement.name,
+        action: 'edit',
+        timestamp,
+        username: 'Current User', // TODO: Get from auth context
+        status: 'edited',
+        editedContent: editedRequirement.name,
+        completedAt: timestamp
+      }, ...prev]);
+
+      // Update the requirement in location state
+      const newState = {
+        ...location.state,
+        requirement: editedRequirement
+      };
+      navigate(location.pathname, { state: newState, replace: true });
+    }
+    setShowRequirementSlider(false);
+    setEditedRequirement(null);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -186,10 +382,180 @@ export const ImpactAnalysisPage: React.FC = () => {
                   </span>
                 )}
               </button>
+              <button
+                onClick={handleAddToRequirement}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-[#feb249] bg-white border border-[#feb249] rounded-md hover:bg-[#fff5e6]"
+              >
+                <Plus className="w-4 h-4" />
+                Add to Requirement
+              </button>
             </div>
           </div>
         </div>
       </header>
+
+      {/* Add to Requirement Slider */}
+      {showAddToRequirementSlider && (
+        <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-lg z-50">
+          <div className="h-full flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Add Additional Impact</h2>
+              <button 
+                onClick={() => {
+                  setShowAddToRequirementSlider(false);
+                  setNewImpactText('');
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              {/* Current Requirement Details */}
+              <div className="p-6 border-b">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Requirement Name
+                    </label>
+                    <div className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-gray-900">
+                      {requirement.name || 'Untitled Requirement'}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Value Statement
+                    </label>
+                    <div className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-gray-900 min-h-[96px]">
+                      {requirement.valueStatement || 'No value statement provided'}
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Acceptance Criteria
+                    </label>
+                    <div className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-gray-900 min-h-[96px]">
+                      {requirement.acceptanceCriteria || 'No acceptance criteria provided'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* New Impact Input */}
+              <div className="p-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Select Category
+                    </label>
+                    <select
+                      value={selectedImpactType}
+                      onChange={(e) => {
+                        setSelectedImpactType(e.target.value);
+                        setSelectedImpactSubtype(''); // Reset subtype when main type changes
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent bg-white"
+                    >
+                      <option value="">Select a category</option>
+                      <option value="risk">Risk</option>
+                      <option value="impact">Impact</option>
+                      <option value="dependency">Dependency</option>
+                    </select>
+                  </div>
+
+                  {selectedImpactType === 'impact' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Select Impact Type
+                      </label>
+                      <select
+                        value={selectedImpactSubtype}
+                        onChange={(e) => setSelectedImpactSubtype(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent bg-white"
+                      >
+                        <option value="">Select impact type</option>
+                        <option value="ui">UI/UX</option>
+                        <option value="code">Code Source</option>
+                        <option value="data">Data Source</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {((selectedImpactType === 'impact' && selectedImpactSubtype) || 
+                    (selectedImpactType && selectedImpactType !== 'impact')) && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {selectedImpactType === 'risk' ? 'Describe Risk' :
+                           selectedImpactType === 'dependency' ? 'Describe Dependency' :
+                           selectedImpactSubtype === 'ui' ? 'Describe UI/UX Impact' :
+                           selectedImpactSubtype === 'code' ? 'Describe Code Impact' :
+                           'Describe Data Impact'}
+                        </label>
+                        <textarea
+                          value={newImpactText}
+                          onChange={(e) => setNewImpactText(e.target.value)}
+                          placeholder={
+                            selectedImpactType === 'risk' ? 'Describe the potential risk and its implications...' :
+                            selectedImpactType === 'dependency' ? 'Describe the dependency and its requirements...' :
+                            selectedImpactSubtype === 'ui' ? 'Describe the UI/UX changes needed...' :
+                            selectedImpactSubtype === 'code' ? 'Describe the code changes required...' :
+                            'Describe the data source modifications needed...'
+                          }
+                          rows={6}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                        />
+                      </div>
+
+                      {selectedImpactType === 'risk' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Risk Mitigation
+                          </label>
+                          <textarea
+                            value={mitigationText}
+                            onChange={(e) => setMitigationText(e.target.value)}
+                            placeholder="Describe how this risk can be mitigated..."
+                            rows={4}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-6 border-t">
+                <button
+                  onClick={handleSubmitNewImpact}
+                  disabled={!selectedImpactType || 
+                           (selectedImpactType === 'impact' && !selectedImpactSubtype) || 
+                           !newImpactText.trim() ||
+                           (selectedImpactType === 'risk' && !mitigationText.trim())}
+                  className={`w-full px-4 py-2 rounded-md transition-colors ${
+                    (selectedImpactType && 
+                     (selectedImpactType !== 'impact' || selectedImpactSubtype) && 
+                     newImpactText.trim() &&
+                     (selectedImpactType !== 'risk' || mitigationText.trim()))
+                      ? 'bg-[#feb249] text-white hover:bg-[#fea849]' 
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  Add {selectedImpactType === 'impact' 
+                    ? (selectedImpactSubtype === 'ui' ? 'UI/UX Impact' :
+                       selectedImpactSubtype === 'code' ? 'Code Impact' :
+                       selectedImpactSubtype === 'data' ? 'Data Impact' : 'Impact')
+                    : selectedImpactType.charAt(0).toUpperCase() + selectedImpactType.slice(1)}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
@@ -201,13 +567,24 @@ export const ImpactAnalysisPage: React.FC = () => {
                 <h2 className="text-xl font-semibold text-gray-900">
                   {requirement.name || 'Untitled Requirement'}
                 </h2>
+                <button
+                  onClick={handleEditRequirement}
+                  className="p-1 text-gray-400 hover:text-[#feb249] rounded-full hover:bg-[#fff5e6]"
+                  title="Edit requirement"
+                >
+                  <Edit3 className="w-5 h-5" />
+                </button>
               </div>
+              <p className="text-gray-600">{requirement.valueStatement}</p>
             </div>
           </div>
         </section>
 
         {/* Dependencies Section */}
-        <DependenciesSection dependencies={analysis.dependencies} />
+        <DependenciesSection 
+          dependencies={analysis.dependencies} 
+          onRemove={handleRemoveDependency}
+        />
 
         {/* Risks Section */}
         <RisksSection
@@ -219,6 +596,7 @@ export const ImpactAnalysisPage: React.FC = () => {
           onSubmitMitigation={handleSubmitMitigationEdit}
           onDiscardEdit={handleDiscardEdit}
           onEditMitigationChange={setEditedMitigationContent}
+          onRemove={handleRemoveRisk}
         />
 
         {/* Impact Summary */}
@@ -241,6 +619,7 @@ export const ImpactAnalysisPage: React.FC = () => {
             onSubmitImpact={handleSubmitImpactEdit}
             onDiscardEdit={handleDiscardEdit}
             onEditImpactChange={setEditedImpactContent}
+            onRemove={(id) => handleRemoveImpact(id, 'ui')}
           />
           <ImpactColumn
             title="Code Source"
@@ -254,6 +633,7 @@ export const ImpactAnalysisPage: React.FC = () => {
             onSubmitImpact={handleSubmitImpactEdit}
             onDiscardEdit={handleDiscardEdit}
             onEditImpactChange={setEditedImpactContent}
+            onRemove={(id) => handleRemoveImpact(id, 'code')}
           />
           <ImpactColumn
             title="Data Source"
@@ -267,6 +647,7 @@ export const ImpactAnalysisPage: React.FC = () => {
             onSubmitImpact={handleSubmitImpactEdit}
             onDiscardEdit={handleDiscardEdit}
             onEditImpactChange={setEditedImpactContent}
+            onRemove={(id) => handleRemoveImpact(id, 'data')}
           />
         </div>
 
@@ -321,14 +702,20 @@ export const ImpactAnalysisPage: React.FC = () => {
                   {completedActions.map(action => (
                     <div key={action.timestamp} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg mb-2">
                       <div className="flex items-center gap-3">
-                        {action.status === 'accepted' ? (
+                        {action.status === 'added' ? (
+                          <Plus className="w-4 h-4 text-[#feb249]" />
+                        ) : action.status === 'removed' ? (
+                          <X className="w-4 h-4 text-red-500" />
+                        ) : action.status === 'accepted' ? (
                           <Check className="w-4 h-4 text-green-500" />
                         ) : (
                           <X className="w-4 h-4 text-red-500" />
                         )}
                         <div className="flex flex-col">
                           <span className="text-gray-600">
-                            {action.status === 'accepted' ? 'Accepted' : 'Rejected'} {action.type}: {action.editedContent || action.item}
+                            {action.status === 'added' ? 'Added new' :
+                             action.status === 'removed' ? 'Removed' :
+                             action.status === 'accepted' ? 'Accepted' : 'Rejected'} {action.type}: {action.editedContent || action.item}
                           </span>
                           <span className="text-sm text-gray-400">
                             by {action.username} • {formatTimestamp(action.completedAt || action.timestamp)}
@@ -464,6 +851,99 @@ export const ImpactAnalysisPage: React.FC = () => {
                   }`}
                 >
                   Accept All
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Requirement Slider */}
+      {showRequirementSlider && editedRequirement && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+          <div className="absolute inset-y-0 right-0 w-[500px] bg-white shadow-lg">
+            <div className="h-full flex flex-col">
+              <div className="flex items-center justify-between p-6 border-b">
+                <h2 className="text-xl font-semibold text-gray-900">Edit Requirement</h2>
+                <button 
+                  onClick={() => {
+                    setShowRequirementSlider(false);
+                    setEditedRequirement(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="flex-1 p-6 overflow-y-auto">
+                <div className="space-y-6">
+                  <form className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Requirement Name
+                      </label>
+                      <input
+                        type="text"
+                        value={editedRequirement.name}
+                        onChange={(e) => setEditedRequirement({
+                          ...editedRequirement,
+                          name: e.target.value
+                        })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Value Statement
+                      </label>
+                      <textarea
+                        value={editedRequirement.valueStatement}
+                        onChange={(e) => setEditedRequirement({
+                          ...editedRequirement,
+                          valueStatement: e.target.value
+                        })}
+                        placeholder="Enter the value statement"
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Acceptance Criteria
+                      </label>
+                      <textarea
+                        value={editedRequirement.acceptanceCriteria}
+                        onChange={(e) => setEditedRequirement({
+                          ...editedRequirement,
+                          acceptanceCriteria: e.target.value
+                        })}
+                        placeholder="Enter the acceptance criteria"
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#feb249] focus:border-transparent"
+                      />
+                    </div>
+                  </form>
+                </div>
+              </div>
+              
+              <div className="p-6 border-t">
+                <button
+                  onClick={handleUpdateRequirement}
+                  disabled={!editedRequirement.name.trim() || 
+                           !editedRequirement.valueStatement.trim() || 
+                           !editedRequirement.acceptanceCriteria.trim()}
+                  className={`w-full px-4 py-2 bg-[#feb249] text-white rounded-md ${
+                    (!editedRequirement.name.trim() || 
+                     !editedRequirement.valueStatement.trim() || 
+                     !editedRequirement.acceptanceCriteria.trim())
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : 'hover:bg-[#fea849] transition-colors'
+                  }`}
+                >
+                  Update Requirement
                 </button>
               </div>
             </div>

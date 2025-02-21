@@ -94,7 +94,7 @@ export const RequirementListPage: React.FC<RequirementListPageProps> = ({
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="text-2xl font-semibold text-gray-900">Requirements</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">Projects</h1>
               <ProjectDropdown
                 projects={projects}
                 selectedProject={currentProject}
